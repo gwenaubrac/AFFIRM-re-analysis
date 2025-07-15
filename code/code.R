@@ -28,15 +28,21 @@ library(magrittr)
 library(table1)
 library(writexl)
 library(tidysmd)
-library(medicaldata)
 library(cobalt)
 library(ggplot2)
 library(glmtoolbox)
 
 #### 2. READ AND EXPLORE DATA ####
 
-setwd("Z:/RPLATT/GWEN-OHRI")
-data <- read.csv("AFFIRM_GWEN.csv")
+# set working directory to analysis, among:
+# main_results
+# target_multi_site
+# aspirin
+# no_aspirin
+# restrict_GA_10w
+
+setwd("Z:/RPLATT/GWEN-OHRI/target_multi_site")
+data <- read.csv("../AFFIRM_GWEN.csv")
 
 data %<>%
   mutate(new_id = row_number())
@@ -300,7 +306,7 @@ tab1_covs <- c(
   "protein_c",
   "protein_s",
   "apla",
-  "other_thrombo_philia",
+  #"other_thrombo_philia",
   "smoking",
   "chronic_hyper_tension",
   "diabetes",
@@ -335,6 +341,45 @@ tab1
 
 write.table (tab1 , "./results/table1_by_site_prior.csv", col.names = T, row.names=F, append= F, sep=',')
 
+# get smds
+factor_covs <- c(
+  "race",
+  "hx_late_loss_12_weeks", 
+  "hx_late_loss_16_weeks",
+  "hx_sga_10th",
+  "hx_pre_eclampsia",
+  "hx_abruption_delivery",
+  "fvl",
+  "pgm",
+  "anti_thrombin",
+  "protein_c",
+  "protein_s",
+  "apla",
+  "smoking",
+  "chronic_hyper_tension",
+  "diabetes",
+  "vte", 
+  "family_history_of_vte",
+  "family_history_of_arterial_disea",
+  "gravida",
+  "hx_losses",
+  "hx_late_loss_20",
+  "live_births",
+  "hx_sga_5",
+  "hx_sga_3",
+  "hx_preterm_34",
+  "hx_preterm_37",
+  "hx_severe_pre_eclampsia",
+  "hx_early_pre_eclampsia",
+  "hx_abruption",
+  "aspirin"
+)
+
+smd_data <- data %>% 
+  mutate(across(all_of(factor_covs), as.factor))
+
+print(tidy_smd(smd_data, tab1_covs, .group = single, na.rm = TRUE), n = 40)
+
 caption <- 'Baseline Characteristics of Cohort by Trial'
 tab1_formula <- as.formula(paste("~", paste(tab1_covs, collapse = "+"), "|unique_id"))
 tab1 <- table1(
@@ -345,7 +390,7 @@ tab1 <- table1(
 )
 tab1
 
-write.table (tab1 , "./results/table1_by_trial_prior.csv", col.names = T, row.names=F, append= F, sep=',')
+write.table (tab1 , "table1_by_trial_prior.csv", col.names = T, row.names=F, append= F, sep=',')
 
 
 caption <- 'Baseline Characteristics of Cohort by Treatment'
@@ -358,7 +403,7 @@ tab1 <- table1(
 )
 tab1
 
-write.table (tab1 , "./results/table1_by_trt_prior.csv", col.names = T, row.names=F, append= F, sep=',')
+write.table (tab1 , "table1_by_trt_prior.csv", col.names = T, row.names=F, append= F, sep=',')
 
 
 
@@ -658,7 +703,10 @@ data %<>%
 # tidy_smd(data, tab1_covs, .group = single, na.rm = T)
 # rm(caption, tab, tab_formula, tab_data)
 
-
+# save cleaned data (for bootstrapping later)
+# data_clean <- data
+# saveRDS(data_clean, file = "../data_clean.R")
+data <- readRDS("../data_clean.R")
 
 #### 8. RESTRICTIONS PRIOR TO ANALYSES ####
 
@@ -694,7 +742,7 @@ tab2 <- table1(
 
 tab2
 
-write.table (tab2 , "./results/table1_by_trt_clean_covs.csv", col.names = T, row.names=F, append= F, sep=',')
+write.table (tab2 , "table1_by_trt_clean_covs.csv", col.names = T, row.names=F, append= F, sep=',')
 
 # exclusion 1: any pregnancy loss
 # exclusion 2: any gravida >2
@@ -725,8 +773,7 @@ to_exclude <- analytic_data %>%
 analytic_data %<>%
   filter(!new_id %in% to_exclude$new_id)
 
-# list of covariates adjusting for in models
-analytic_covs_list <- c(
+covs_list <- c(
   "age__years_",
   "age_cat",
   "above_30",
@@ -737,12 +784,13 @@ analytic_covs_list <- c(
   "bmi_above_30",
   "thrombophilia_bin",
   "smoking_bin",
-  "aspirin"
+  "aspirin",
+  "hx_any_abruption"
 )
 
 # covariates by single vs multi-site trials after restrictions
 caption <- "Baseline Characteristics by Site After Restrictions"
-tab3_formula <- as.formula(paste("~", paste(analytic_covs_list, collapse = "+"), "|single"))
+tab3_formula <- as.formula(paste("~", paste(covs_list, collapse = "+"), "|single"))
 tab3 <- table1(
   tab3_formula,
   data = analytic_data,
@@ -752,11 +800,13 @@ tab3 <- table1(
 
 tab3
 
-write.table (tab3 , "./results/table1_by_site_restr.csv", col.names = T, row.names=F, append= F, sep=',')
+print(tidy_smd(analytic_data, covs_list, .group = single, na.rm = TRUE), n = 40)
+
+write.table (tab3 , "table1_by_site_restr.csv", col.names = T, row.names=F, append= F, sep=',')
 
 # covariates by trial after applying exclusions
 caption <- "Baseline Characteristcs by Trial After Restrictions"
-tab3_formula <- as.formula(paste("~", paste(analytic_covs_list, collapse = "+"), "|unique_id"))
+tab3_formula <- as.formula(paste("~", paste(covs_list, collapse = "+"), "|unique_id"))
 tab3 <- table1(
   tab3_formula,
   data = analytic_data,
@@ -765,7 +815,7 @@ tab3 <- table1(
 )
 
 tab3
-write.table (tab3 , "./results/table1_by_trial_restr.csv", col.names = T, row.names=F, append= F, sep=',')
+write.table (tab3 , "table1_by_trial_restr.csv", col.names = T, row.names=F, append= F, sep=',')
 
 
 
@@ -776,9 +826,12 @@ write.table (tab3 , "./results/table1_by_trial_restr.csv", col.names = T, row.na
 # single site patients (single = 1 -> S = 0) -- this is our "target" population
 # multi site patients (single = 0 -> S = 1) is our "study" population
 # so our goal is to extend inference from multi-site to single-site patients
-
 analytic_data %<>%
   mutate(S = if_else(single == 1, 0, 1))
+
+# for sensitivity where reverse S, do this instead:
+# analytic_data %<>%
+#   mutate(S = if_else(single == 1, 1, 0))
 
 analytic_covs_list <- c(
   "age__years_",
@@ -790,12 +843,8 @@ analytic_covs_list <- c(
   "aspirin"
 )
 
-# originally we tried to incorporate treatment balancing directly in the IOSW weights (pa)
-# but we struggled to achieve balance
-
-# selection_model <- as.formula(paste("S ~", paste(analytic_covs_list, collapse = "+")))
-# treatment_model <- as.formula(paste("trt ~", paste(analytic_covs_list, collapse = "+")))
-
+# we tested different selection models to achieve balance
+# and settled on using splines to model age
 library(splines)
 selection_model <- as.formula("S ~ 
                               ns(age__years_, df = 3) + 
@@ -809,44 +858,46 @@ selection_model <- as.formula("S ~
                               ")
 
 # generate weights
-S1data <- subset(analytic_data, S == 1)
-summary(S1data[analytic_covs_list])
-
 w_reg <- glm(selection_model, family = binomial(), data = analytic_data)
 summary(w_reg)
+
 ps <- predict(w_reg, newdata = analytic_data, type = "response")
 analytic_data$ps <- ps
+analytic_data %<>%
+  mutate(
+    iosw= if_else(
+      S == 1, (1-ps)/ps,
+      1
+    )
+  )
 
-# w_reg2 <- glm(treatment_model, family = "binomial", data = S1data)
-# summary(w_reg2)
-# pa <- predict(w_reg2, newdata = analytic_data, type = "response")
-# analytic_data$pa <- pa
-
-# iosw = (analytic_data$trt * analytic_data$S * (1-ps))/(ps*pa) + ((1-analytic_data$trt) * analytic_data$S*(1-ps)/(ps*(1-pa)))
-# analytic_data$iosw <- iosw
-
-iosw = analytic_data$S * (1-ps)/ps
-analytic_data$iosw <- iosw
-
-# stabilize weights: multiply by marginal probability of selection
+# stabilize weights: multiply by marginal ODDS of selection for S=1 patients
 marg_s_model <- glm(S ~ 1, family = binomial(), data = analytic_data)
 marg_ps <- predict(marg_s_model, newdata = analytic_data, type = "response")
-analytic_data$marg_ps <- marg_ps
-analytic_data %<>%
-  mutate(siosw = iosw * marg_ps)
+odds_s <- marg_ps/(1-marg_ps)
+odds_s
 
+analytic_data %<>%
+  mutate(
+    siosw = if_else(S == 1, odds_s*iosw, 1)
+  )
 
 summary(analytic_data$ps)
-#summary(analytic_data$pa)
 summary(analytic_data$iosw)
 sd(analytic_data$iosw)
 summary(analytic_data$siosw)
 sd(analytic_data$siosw)
 
+# check N of pseudo populations, which should be:
+# N = 359 for IOSW in S=0 (weight of 1 for all)
+# N = 359 for SIOSW in S=0 (weight of 1 for all)
+# N = 359 for IOSW in S=1 (size of target S=0)
+# N = 136 for SIOSW in S=1 (original size of S=1)
 analytic_data %>%
   group_by(S) %>% 
   summarize(
-    N = sum(iosw)
+    N_iosw = sum(iosw),
+    N_siosw = sum(siosw)
   )
 
 # examine probability of selection distribution by trial
@@ -888,23 +939,14 @@ p <- ggplot(analytic_data, aes(x = ps, fill = as.factor(S))) +
     plot.background = element_rect(fill = "white", color = NA)
   )
 
+p
 
-ggsave("./results/p_selection_density_plot.png", plot = p, width = 8, height = 6, dpi = 300)
+ggsave("p_selection_density_plot.png", plot = p, width = 8, height = 6, dpi = 300)
 
 # compare weighted multi-site patients vs unweighted single-site patients
 # want SMD < 0.1
-
-# let's update iosw to 1 to patients with S = 0 (rather than 0 as is currently)
-# so using iosw means looking at unweighted single-site (S = 0) + weighted multi-site (S = 1) together
-
 covs <- analytic_data %>%
   select(all_of(analytic_covs_list))
-
-analytic_data %<>%
-  mutate(
-    iosw = if_else(S == 0, 1, iosw),
-    siosw = if_else(S == 0, 1, siosw)
-  )
 
 tidy_smd(analytic_data, analytic_covs_list, .group = S, .wts = c(iosw))
 
@@ -936,7 +978,7 @@ var_labels <- c(
   "aspirin" = "Aspirin"
 )
 
-write.csv(bal_tab_site_iosw, "./results/bal_tab_site_iosw.csv", row.names = TRUE)
+write.csv(bal_tab_site_iosw, "bal_tab_site_iosw.csv", row.names = TRUE)
 
 loveplot_site_iosw <- love.plot(
   bal_site_iosw,
@@ -971,7 +1013,7 @@ loveplot_site_iosw <- loveplot_site_iosw + theme(
 
 loveplot_site_iosw
 
-ggsave("./results/loveplot_site_iosw.png", plot = loveplot_site_iosw, width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("loveplot_site_iosw.png", plot = loveplot_site_iosw, width = 8, height = 6, dpi = 300, bg = "white")
 dev.off()
 
 # check SMD by treatment in weighted multi-site patients
@@ -999,7 +1041,7 @@ bal_tab_trt_iosw <- bal_trt_iosw$Balance %>%
 row.names(bal_tab_trt_iosw)
 row.names(bal_tab_trt_iosw) <- c("Maternal age", "Any pre-eclampsia", "Any pre-term births", "Any SGA neonates", "BMI>30", "Smoking", "Aspirin Use")
 
-write.csv(bal_tab_trt_iosw, "./results/bal_tab_trt_iosw.csv", row.names = TRUE)
+write.csv(bal_tab_trt_iosw, "bal_tab_trt_iosw.csv", row.names = TRUE)
 
 loveplot_trt_iosw <- love.plot(
   bal_trt_iosw,
@@ -1033,29 +1075,29 @@ loveplot_trt_iosw <- loveplot_trt_iosw + theme(
 ) 
 
 loveplot_trt_iosw
-ggsave("./results/loveplot_trt_iosw.png", plot = loveplot_trt_iosw, width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("loveplot_trt_iosw.png", plot = loveplot_trt_iosw, width = 8, height = 6, dpi = 300, bg = "white")
 
 # although iosw balances cov distribution between single and multi-site patients
 # the weighs also introduce confouding between trt groups in weighted multi-site patients
 # so we will compute iptw to balance by treatment in the weighted pseudopopulation
 
 ## IPTW IN WEIGHTED MULTI-SITE PATIENTS ##
-library(survey)
+# fit trt model to estimate probability of trt in iosw-weighted pseudopopulation
+
 wmulti_data <- analytic_data %>% filter(S == 1)
 
-# specify "survey" design where "sampling probability" is iosw weight
-design <- svydesign(ids = ~1, data = wmulti_data, weights = ~iosw)
-
-# fit trt model to estimate probability of trt in iosw-weighted pseudopopulation
-trt_model <- svyglm(trt ~ age__years_ + 
-                          any_pe + 
-                          any_preterm + 
-                          any_sga + 
-                          bmi_above_30 + 
-                          smoking_bin + 
-                          aspirin,
-                          design = design,
-                          family = binomial())
+trt_model <- glm(
+  trt ~ age__years_ +
+    any_pe +
+    any_preterm +
+    any_sga +
+    bmi_above_30 +
+    smoking_bin +
+    aspirin,
+  data = wmulti_data,
+  weights = iosw,
+  family = binomial(link = "logit")
+)
 
 wmulti_data$pa <- predict(trt_model, type = "response")
 
@@ -1063,38 +1105,37 @@ wmulti_data$iptw <- with(wmulti_data, ifelse(trt == 1,
                                              1 / pa,
                                              1 / (1 - pa)))
 
-# normalized weights
-# p_trt <- weighted.mean(wmulti_data$trt, w = wmulti_data$iosw)
-# 
-# wmulti_data$siptw <- with(wmulti_data, ifelse(trt == 1,
-#                                               p_trt / pa,
-#                                               (1 - p_trt) / (1 - pa)))
-
 # stabilized weights
-marg_trt_model <- svyglm(trt ~ 1,
-                    design = design,
-                    family = binomial())
+# (same regardless of whether use iosw or siows for pseudo population)
+marg_trt_model <- glm(trt ~ 1,
+                    data = wmulti_data,
+                    family = binomial(link = "logit"))
 
 wmulti_data$marg_pa <- predict(marg_trt_model, type = "response")
 
-
 wmulti_data$siptw <- with(wmulti_data, ifelse(trt == 1,
-                                             marg_pa / pa,
-                                             (1-marg_pa) / (1 - pa)))
+                                             iptw * marg_pa,
+                                             iptw * (1-marg_pa)
+                                             ))
 
 summary(wmulti_data$iptw)
 sd(wmulti_data$iptw)
 summary(wmulti_data$siptw)
 sd(wmulti_data$siptw)
 
-analytic_data$combo_w <- NA
-analytic_data$combo_sw <- NA
+# check N of pseudo populations in S=1, which should be:
+# N = 272 for IPTW in S=1 (since 50:50 randomization, twice the size)
+# N = 136 for SIPTW in S=1 (original size of S=1)
+wmulti_data %>%
+  summarize(
+    N_iptw = sum(iptw),
+    N_siptw = sum(siptw)
+  )
+
 analytic_data$iptw <- NA
 analytic_data$siptw <- NA
 analytic_data$iptw[analytic_data$S == 1] <-wmulti_data$iptw
 analytic_data$siptw[analytic_data$S == 1] <-wmulti_data$siptw
-analytic_data$combo_w[analytic_data$S == 1] <-wmulti_data$iosw * wmulti_data$iptw
-analytic_data$combo_sw[analytic_data$S == 1] <-wmulti_data$siosw * wmulti_data$siptw
 
 ## IPTW FOR SINGLE-SITE PATIENTS ## 
 single_data <- analytic_data %>% 
@@ -1108,7 +1149,7 @@ trt_model_single <- glm(trt ~ age__years_ +
                       smoking_bin + 
                       aspirin,
                     data = single_data,
-                    family = binomial())
+                    family = binomial(link = "logit"))
 
 single_data$pa <- predict(trt_model_single, type = "response")
 
@@ -1116,39 +1157,72 @@ single_data$iptw <- with(single_data, ifelse(trt == 1,
                                              1 / pa,
                                              1 / (1 - pa)))
 
-# normalize weights
-# p_trt <- weighted.mean(single_data$trt, w = single_data$iosw)
-# 
-# single_data$siptw <- with(single_data, ifelse(trt == 1,
-#                                               p_trt / pa,
-#                                               (1 - p_trt) / (1 - pa)))
-# 
-# analytic_data$combo_w[analytic_data$S==0] <- single_data$siptw
-
 # stabilize weights
 marg_trt_model <- glm(trt ~ 1, data = single_data, family = binomial())
 single_data$marg_pa <- predict(marg_trt_model, type = "response")
 
-
 single_data$siptw <- with(single_data, ifelse(trt == 1,
-                                              marg_pa / pa,
-                                              (1-marg_pa) / (1 - pa)))
+                                              iptw * marg_pa,
+                                              iptw * (1-marg_pa)))
 
 summary(single_data$iptw)
 sd(single_data$iptw)
 summary(single_data$siptw)
 sd(single_data$siptw)
 
+# check N of pseudo populations, which should be:
+# N = 718 for IPTW in S=1 (twice size of S=0)
+# N = 359 for SIPTW in S=1 (original size of S=0)
+single_data %>%
+  summarize(
+    N_iptw = sum(iptw),
+    N_siptw = sum(siptw)
+  )
+
 analytic_data$iptw[analytic_data$S == 0] <-single_data$iptw
 analytic_data$siptw[analytic_data$S == 0] <-single_data$siptw
-analytic_data$combo_w[analytic_data$S == 0] <-single_data$iosw * single_data$iptw
-analytic_data$combo_sw[analytic_data$S == 0] <-single_data$siosw * single_data$siptw
+
+analytic_data %<>%
+  mutate(
+    w = iptw * iosw,
+    sw= siptw * siosw
+  )
 
 # check trt balance with combined both weights
-tidy_smd(analytic_data, analytic_covs_list, .group = trt, .wts = c(combo_w))
+tidy_smd(analytic_data, analytic_covs_list, .group = trt, .wts = c(w))
 
-bal_trt_combo_w <- bal.tab(trt ~ covs, data = analytic_data,
-                   weights = 'combo_w',
+print(tidy_smd(analytic_data, analytic_covs_list, .group = S, .wts = c(w, iosw, iptw)), n=40)
+
+# get means/N/% in weighted sample
+library(survey)
+
+design <- svydesign(
+  ids = ~1,
+  data = analytic_data,
+  weights = ~w
+)
+
+results <- lapply(analytic_covs_list, function(var) {
+  f <- as.formula(paste0("~", var))
+  svyby(f, ~S, design, svymean, na.rm = TRUE)
+})
+
+svyby(~aspirin, ~S, design, svytotal, na.rm = TRUE)
+
+data_sub <- analytic_data[analytic_data$S == 1, ]
+
+design_sub <- svydesign(
+  ids = ~1,
+  data = data_sub,
+  weights = ~w
+)
+
+svymean(~age__years_, design_sub)
+svyvar(~age__years_, design_sub) |> sqrt()
+svyquantile(~age__years_, design_sub, quantiles = c(0, 0.5, 1), na.rm = TRUE)
+
+bal_trt_w <- bal.tab(trt ~ covs, data = analytic_data,
+                   weights = 'w',
                    binary = "std", continuous = "std", 
                    stats = c('mean.diffs'),
                    s.d.denom = 'pooled',
@@ -1156,19 +1230,19 @@ bal_trt_combo_w <- bal.tab(trt ~ covs, data = analytic_data,
                    thresholds = c(m = 0.1)
 ) 
 
-bal_tab_trt_combo_w <- bal_trt_combo_w$Balance %>% 
+bal_tab_trt_w <- bal_trt_w$Balance %>% 
   dplyr::rename('SMD (Unadjusted)' = Diff.Un,
                 'SMD (Wsingle)' = Diff.Adj,
                 'Balance' = M.Threshold)
 
 # clean printed variable names
-row.names(bal_tab_trt_combo_w)
-row.names(bal_tab_trt_combo_w) <- c("Maternal age", "Any pre-eclampsia", "Any pre-term births", "Any SGA neonates", "BMI>30", "Smoking", "Aspirin Use")
+row.names(bal_tab_trt_w)
+row.names(bal_tab_trt_w) <- c("Maternal age", "Any pre-eclampsia", "Any pre-term births", "Any SGA neonates", "BMI>30", "Smoking", "Aspirin Use")
 
-write.csv(bal_tab_trt_combo_w, "./results/bal_tab_trt_combo_w.csv", row.names = TRUE)
+write.csv(bal_tab_trt_w, "bal_tab_trt_w.csv", row.names = TRUE)
 
-loveplot_trt_combo_w <- love.plot(
-  bal_trt_combo_w,
+loveplot_trt_w <- love.plot(
+  bal_trt_w,
   binary = "std",
   thresholds = c(m = .1),
   title = 'Balance by Treatment with IOSW + IPTW',
@@ -1179,7 +1253,7 @@ loveplot_trt_combo_w <- love.plot(
   var.names = var_labels
 )
 
-loveplot_trt_combo_w <- loveplot_trt_combo_w + theme(
+loveplot_trt_w <- loveplot_trt_w + theme(
   panel.border = element_blank(),
   panel.grid.major = element_blank(),
   panel.grid.minor = element_blank(),
@@ -1198,15 +1272,15 @@ loveplot_trt_combo_w <- loveplot_trt_combo_w + theme(
   legend.key.size = unit(0.5, "lines")
 ) 
 
-loveplot_trt_combo_w
+loveplot_trt_w
 
-ggsave("./results/loveplot_trt_combo_w.png", plot = loveplot_trt_combo_w, width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("loveplot_trt_w.png", plot = loveplot_trt_w, width = 8, height = 6, dpi = 300, bg = "white")
 
 # check site balance with both weights
-tidy_smd(analytic_data, analytic_covs_list, .group = S, .wts = c(combo_w))
+tidy_smd(analytic_data, analytic_covs_list, .group = S, .wts = c(w))
 
-bal_site_combo_w <- bal.tab(S ~ covs, data = analytic_data,
-                         weights = 'combo_w',
+bal_site_w <- bal.tab(S ~ covs, data = analytic_data,
+                         weights = 'w',
                          binary = "std", continuous = "std", 
                          stats = c('mean.diffs'),
                          s.d.denom = 'pooled',
@@ -1214,19 +1288,19 @@ bal_site_combo_w <- bal.tab(S ~ covs, data = analytic_data,
                          thresholds = c(m = 0.1)
 ) 
 
-bal_tab_site_combo_w <- bal_site_combo_w$Balance %>% 
+bal_tab_site_w <- bal_site_w$Balance %>% 
   dplyr::rename('SMD (Unadjusted)' = Diff.Un,
                 'SMD (Wsingle)' = Diff.Adj,
                 'Balance' = M.Threshold)
 
 # clean printed variable names
-row.names(bal_tab_site_combo_w)
-row.names(bal_tab_site_combo_w) <- c("Maternal age", "Any pre-eclampsia", "Any pre-term births", "Any SGA neonates", "BMI>30", "Smoking", "Aspirin Use")
+row.names(bal_tab_site_w)
+row.names(bal_tab_site_w) <- c("Maternal age", "Any pre-eclampsia", "Any pre-term births", "Any SGA neonates", "BMI>30", "Smoking", "Aspirin Use")
 
-write.csv(bal_tab_site_combo_w, "./results/bal_tab_site_combo_w.csv", row.names = TRUE)
+write.csv(bal_tab_site_w, "bal_tab_site_w.csv", row.names = TRUE)
 
-loveplot_site_combo_w <- love.plot(
-  bal_site_combo_w,
+loveplot_site_w <- love.plot(
+  bal_site_w,
   binary = "std",
   thresholds = c(m = .1),
   title = 'Balance by Site with IOSW + IPTW',
@@ -1237,7 +1311,7 @@ loveplot_site_combo_w <- love.plot(
   var.names = var_labels
 )
 
-loveplot_site_combo_w <- loveplot_site_combo_w + theme(
+loveplot_site_w <- loveplot_site_w + theme(
   panel.border = element_blank(),
   panel.grid.major = element_blank(),
   panel.grid.minor = element_blank(),
@@ -1256,8 +1330,8 @@ loveplot_site_combo_w <- loveplot_site_combo_w + theme(
   legend.key.size = unit(0.5, "lines")
 ) 
 
-loveplot_site_combo_w
-ggsave("./results/loveplot_site_combo_w.png", plot = loveplot_site_combo_w, width = 8, height = 6, dpi = 300, bg = "white")
+loveplot_site_w
+ggsave("loveplot_site_w.png", plot = loveplot_site_w, width = 8, height = 6, dpi = 300, bg = "white")
 
 # recap of all balance plots
 library(gridExtra)
@@ -1265,15 +1339,15 @@ library(gridExtra)
 loveplot_grid <- grid.arrange(
   loveplot_site_iosw, 
   loveplot_trt_iosw, 
-  loveplot_site_combo_w, 
-  loveplot_trt_combo_w, 
+  loveplot_site_w, 
+  loveplot_trt_w, 
   ncol = 2
   )
 
 loveplot_grid
-ggsave("./results/loveplot_grid.png", plot = loveplot_grid, width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("loveplot_grid.png", plot = loveplot_grid, width = 8, height = 6, dpi = 300, bg = "white")
 
-p_weight_distribution <- ggplot(analytic_data, aes(x = combo_w, fill = as.factor(S))) +
+p_weight_distribution <- ggplot(analytic_data, aes(x = w, fill = as.factor(S))) +
   geom_density(alpha = 0.3) +
   labs(
     x = "IOSW + IPTW",
@@ -1291,14 +1365,14 @@ p_weight_distribution <- ggplot(analytic_data, aes(x = combo_w, fill = as.factor
   )
 p_weight_distribution
 
-ggsave("./results/p_weight_distribution.png", plot = p_weight_distribution, width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("p_weight_distribution.png", plot = p_weight_distribution, width = 8, height = 6, dpi = 300, bg = "white")
 
-summary(analytic_data$combo_w)
+summary(analytic_data$w)
 
 analytic_data %>% 
   group_by(unique_id) %>% 
   summarize(
-    combo_w = mean(combo_w)
+    w = mean(w)
   )
 
 
@@ -1363,138 +1437,56 @@ round(OM, 4)*100
 
 ## C) INVERSE ODDS WEIGHTING
 
-# unstabilized IOW
 A <- analytic_data$trt
 S <- analytic_data$S
-w <- analytic_data$combo_w
+w <- analytic_data$w
+sw <- analytic_data$sw # stabilized weights
 Y <- analytic_data$outcome
 
-# original version: divide by N0 (sample size in S = 0, or single-site patients) - A
-IOW1a_1 <- (sum((1-S))^-1) * sum(A*S*w*Y)
-IOW1a_0 <- (sum((1-S))^-1) * sum((1-A)*S*w*Y)
+# unstabilized weights
+IOW1_1 <- (sum(w)^-1) * sum(A*S*w*Y)
+IOW1_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
 
-IOW1a = IOW1a_1 - IOW1a_0
-IOW1a
+IOW1 = IOW1_1 - IOW1_0
+IOW1
 
-round(IOW1a_1, 4)*100
-round(IOW1a_0, 4)*100
-round(IOW1a, 4)*100
+round(IOW1_1, 4)*100
+round(IOW1_0, 4)*100
+round(IOW1, 4)*100
 
-# updated version: divide by sum of weights - B
-IOW1b_1 <- (sum(w)^-1) * sum(A*S*w*Y)
-IOW1b_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+# stabilized weights
+IOW2_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
+IOW2_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
 
-IOW1b = IOW1b_1 - IOW1b_0
-IOW1b
-
-round(IOW1b_1, 4)*100
-round(IOW1b_0, 4)*100
-round(IOW1b, 4)*100
-
-# stabilized IOW
-S0data <- subset(analytic_data, S == 0)
-S1data_A1 <- subset(analytic_data, S == 1 & trt == 1)
-IOW1mod <- glm(formula = outcome ~ 1, data = S1data_A1, weights = S1data_A1$combo_w)
-p1 <- predict(IOW1mod, newdata = S0data, type = "response")
-S1data_A0 <- subset(analytic_data, S == 1 & trt == 0)
-IOW0mod <- glm(formula = outcome ~ 1, data = S1data_A0, weights = S1data_A0$combo_w)
-p0 <- predict(IOW0mod, newdata = S0data, type = "response")
-IOW2_1 <- mean(p1)
-IOW2_0 <- mean(p0)
-IOW2 <- mean(p1) - mean(p0)
+IOW2 = IOW2_1 - IOW2_0
 IOW2
 
 round(IOW2_1, 4)*100
 round(IOW2_0, 4)*100
 round(IOW2, 4)*100
 
-# normalize by dividing each weight by mean weight
-analytic_data$w_norm <- with(analytic_data, ave(combo_w, trt, FUN = function(x) x / mean(x)))
-w_norm <- analytic_data$w_norm
-
-IOW1c_1 <- (sum((1-S))^-1) * sum(A*S*w_norm*Y)
-IOW1c_0 <- (sum((1-S))^-1) * sum((1-A)*S*w_norm*Y)
-
-IOW1c = IOW1c_1 - IOW1c_0
-IOW1c
-
-round(IOW1c_1, 4)*100
-round(IOW1c_0, 4)*100
-round(IOW1c, 4)*100
-
-IOW1d_1 <- (sum(w_norm)^-1) * sum(A*S*w_norm*Y)
-IOW1d_0 <- (sum(w_norm)^-1) * sum((1-A)*S*w_norm*Y)
-
-IOW1d = IOW1d_1 - IOW1d_0
-IOW1d
-
-round(IOW1d_1, 4)*100
-round(IOW1d_0, 4)*100
-round(IOW1d, 4)*100
-
-# stabilize using weighted mean (same as above)
-# S1data_A1 <- subset(analytic_data, S == 1 & trt == 1)
-# S1data_A0 <- subset(analytic_data, S == 1 & trt == 0)
-# 
-# IOW2_1 <- weighted.mean(S1data_A1$outcome, S1data_A1$combo_w)
-# IOW2_0 <- weighted.mean(S1data_A0$outcome, S1data_A0$combo_w)
-# IOW2 <- IOW2_1 - IOW2_0
-# IOW2*100
-
-# stabilize manually (same as above)
-# w1 <- S1data_A1$iosw
-# w0 <- S1data_A0$iosw
-# y1 <- S1data_A1$outcome
-# y0 <- S1data_A0$outcome
-# 
-# IOW2_1 <- sum(w1 * y1) / sum(w1)
-# IOW2_0 <- sum(w0 * y0) / sum(w0)
-# IOW2 <- IOW2_1 - IOW2_0
-# IOW2
-
-
 
 ## D) DOUBLY ROBUST ESTIMATOR
 
 # DR unstabilized
-A <- analytic_data$trt
-S <- analytic_data$S
-Y <- analytic_data$outcome
 p1 <- analytic_data$p1
 p0 <- analytic_data$p0
-w <- analytic_data$combo_w
 
-# original version: divide by N0 (sample size in S = 0, or single-site patients) - A
+# unstabilized weights
+DR1_1 <- (sum(w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
+DR1_0 <- (sum(w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
 
-DR1a_1 <- (sum((1-S))^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-DR1a_0 <- (sum((1-S))^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+DR1 <- DR1_1 - DR1_0
+DR1
 
-DR1a <- DR1a_1 - DR1a_0
-DR1a
+round(DR1_1, 4)*100
+round(DR1_0, 4)*100
+round(DR1, 4)*100
 
-round(DR1a_1, 4)*100
-round(DR1a_0, 4)*100
-round(DR1a, 4)*100
+# stabilized weights
+DR2_1 <- (sum(sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
+DR2_0 <- (sum(sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
 
-# updated version: divide by sum of weights - B
-
-DR1b_1 <- (sum(w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-DR1b_0 <- (sum(w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
-
-DR1b <- DR1b_1 - DR1b_0
-DR1b
-
-round(DR1b_1, 4)*100
-round(DR1b_0, 4)*100
-round(DR1b, 4)*100
-
-# DR using stabilized IOW
-sum1_DR2 <- sum(S*A*w*(Y-p1))
-sum0_DR2 <- sum(S*(1-A)*w*(Y-p0))
-norm1 <- (sum(S*A*w))^-1
-norm0 <- (sum(S*(1-A)*w))^-1
-DR2_1 <- norm1 * sum1_DR2 + (sum(1-S)^-1) * sum((1-S) * p1)
-DR2_0 <- norm0 * sum0_DR2 + (sum(1-S)^-1) * sum((1-S) * p0)
 DR2 <- DR2_1 - DR2_0
 DR2
 
@@ -1502,30 +1494,19 @@ round(DR2_1, 4)
 round(DR2_0, 4)
 round(DR2, 4)
 
-# DR using stabilized IOW w_norm directly
-
-DR1c_1 <- (sum((1-S))^-1) * sum(S*A*w_norm*(Y-p1) + (1-S) * p1)
-DR1c_0 <- (sum((1-S))^-1) * sum(S*(1-A)*w_norm*(Y-p0) + (1-S) * p0)
-
-DR1c <- DR1c_1 - DR1c_0
-DR1c
-
-DR1d_1 <- (sum(w_norm)^-1) * sum(S*A*w_norm*(Y-p1) + (1-S) * p1)
-DR1d_0 <- (sum(w_norm)^-1) * sum(S*(1-A)*w_norm*(Y-p0) + (1-S) * p0)
-
-DR1d <- DR1d_1 - DR1d_0
-DR1d
-
-# DR using weighted regression
+# DR using weighted regression (unstabilized weights)
 S0data <- subset(analytic_data, S == 0)
+
 S1data_A1 <- subset(analytic_data, S == 1 & trt == 1)
-DR1mod <- glm(formula = outcome_model, data = S1data_A1, weights = S1data_A1$combo_w, family = "binomial" (link = "logit"))
-p1 <- predict(DR1mod, newdata = S0data, type = "response")
+DR1mod_w <- glm(formula = outcome_model, data = S1data_A1, weights = S1data_A1$w, family = "binomial" (link = "logit"))
+p1_w <- predict(DR1mod_w, newdata = S0data, type = "response")
+
 S1data_A0 <- subset(analytic_data, S == 1 & trt == 0)
-DR0mod <- glm(formula = outcome_model, data = S1data_A0, weights = S1data_A0$combo_w, family = "binomial" (link = "logit"))
-p0 <- predict(DR0mod, newdata = S0data, type = "response")
-DR3_1 <- mean(p1)
-DR3_0 <- mean(p0)
+DR0mod_w <- glm(formula = outcome_model, data = S1data_A0, weights = S1data_A0$w, family = "binomial" (link = "logit"))
+p0_w <- predict(DR0mod_w, newdata = S0data, type = "response")
+
+DR3_1 <- mean(p1_w)
+DR3_0 <- mean(p0_w)
 DR3 <- DR3_1 - DR3_0
 DR3
 
@@ -1533,11 +1514,23 @@ round(DR3_1, 4)*100
 round(DR3_0, 4)*100
 round(DR3, 4)*100
 
-#### 11. FIT WEIGHTED GEE MODEL FOR OUTCOME ####  
+# DR stabilized weights
+DR1mod_sw <- glm(formula = outcome_model, data = S1data_A1, weights = S1data_A1$sw, family = "binomial" (link = "logit"))
+p1_sw <- predict(DR1mod_sw, newdata = S0data, type = "response")
 
-# first we arrange data by id and grouping var (trial)
-analytic_data %<>% 
-  arrange(new_id, unique_id)
+DR0mod_sw <- glm(formula = outcome_model, data = S1data_A0, weights = S1data_A0$sw, family = "binomial" (link = "logit"))
+p0_sw <- predict(DR0mod_sw, newdata = S0data, type = "response")
+
+DR4_1 <- mean(p1_sw)
+DR4_0 <- mean(p0_sw)
+DR4 <- DR4_1 - DR4_0
+DR4
+
+round(DR4_1, 4)*100
+round(DR4_0, 4)*100
+round(DR4, 4)*100
+
+#### 11. FIT WEIGHTED GEE MODEL FOR OUTCOME ####  
 
 ## A) CRUDE GEE
 
@@ -1552,8 +1545,7 @@ gee_crude_model <- glmgee(
   id = unique_id, 
   data = analytic_data,
   family = binomial("logit"),
-  corstr = "exchangeable", # can try independence, exchangeable, unstructured
-  type = "bias-corrected" # use sample sample cov matrix
+  corstr = "exchangeable" # can try independence, exchangeable, unstructured
 )
 
 #summary(gee_crude_model)
@@ -1592,17 +1584,14 @@ analytic_data_S1 <- analytic_data %>%
   filter(S == 1)
 
 # first use logit to get separate probability by treatment group
-gee_weighted_model <- glmgee(
+gee_w_model <- glmgee(
   outcome ~ trt,
   data = analytic_data_S1,
   id = unique_id,
   family = binomial(link = "logit"),
-  corstr = "exchangeable", # can try independence, exchangeable, unstructured
-  weights = analytic_data_S1$combo_w
+  corstr = "exchangeable", 
+  weights = analytic_data_S1$w
 )
-
-summary(gee_weighted_model)
-exp(gee_weighted_model$coefficients[2]) # this is the OR
 
 treated <- analytic_data_S1
 treated$trt <- 1
@@ -1610,8 +1599,8 @@ treated$trt <- 1
 untreated <- analytic_data_S1
 untreated$trt <- 0
 
-treated$pred <- predict(gee_weighted_model, newdata = treated, type = "response")
-untreated$pred <- predict(gee_weighted_model, newdata = untreated, type = "response")
+treated$pred <- predict(gee_w_model, newdata = treated, type = "response")
+untreated$pred <- predict(gee_w_model, newdata = untreated, type = "response")
 
 GEE_IOW1_1 <- mean(treated$pred)
 GEE_IOW1_0 <- mean(untreated$pred)
@@ -1623,44 +1612,41 @@ rm(treated, untreated)
 
 # now use identity to get the risk difference directly
 # and apply Mancl & deRouen small sample bias variance correction after
-gee_weighted_model <- glmgee(
+gee_w_model <- glmgee(
   outcome ~ trt,
   data = analytic_data_S1,
   id = unique_id,
   family = binomial(link = "identity"),
-  corstr = "exchangeable", # can try independence, exchangeable, unstructured
-  weights = analytic_data_S1$combo_w
+  corstr = "exchangeable", 
+  weights = analytic_data_S1$w
 )
 
-vcov_bias_corrected <- vcov(gee_weighted_model, type = "bias-corrected")
+vcov_bias_corrected <- vcov(gee_w_model, type = "bias-corrected")
 se_bias_corrected <- sqrt(diag(vcov_bias_corrected))
 
 cbind(
-  estimate = gee_weighted_model$coefficients[2]*100, 
+  estimate = gee_w_model$coefficients[2]*100, 
   std_error = se_bias_corrected[2], 
-  lower = gee_weighted_model$coefficients[2]*100 - se_bias_corrected[2]*1.95, 
-  upper = gee_weighted_model$coefficients[2]*100 + se_bias_corrected[2]*1.95
+  lower = gee_w_model$coefficients[2]*100 - se_bias_corrected[2]*1.95, 
+  upper = gee_w_model$coefficients[2]*100 + se_bias_corrected[2]*1.95
   )
 
-GEE_IOW1 <- coef(gee_weighted_model)[2]
+GEE_IOW1 <- coef(gee_w_model)[2]
 
-# C) STABILZIED IOW GEE - DEFINITELY SOMETHING WRONG HERE
-
-analytic_data_S1_norm <- analytic_data_S1
-analytic_data_S1_norm$w_norm <- with(analytic_data_S1_norm, ave(iosw, trt, FUN = function(x) x / mean(x)))
+# C) STABILZIED IOW GEE
 
 # first use logit to get separate probability by treatment group
-gee_weighted_model_norm <- glmgee(
+gee_sw_model <- glmgee(
   outcome ~ trt,
   data = analytic_data_S1,
   id = unique_id,
   family = binomial(link = "logit"),
-  corstr = "exchangeable", # can try independence, exchangeable, unstructured
-  weights = analytic_data_S1_norm$w_norm
+  corstr = "exchangeable",
+  weights = analytic_data_S1$sw
 )
 
-summary(gee_weighted_model_norm)
-exp(gee_weighted_model_norm$coefficients[2]) # this is the OR
+summary(gee_sw_model)
+exp(gee_sw_model$coefficients[2]) # this is the OR
 
 treated <- analytic_data_S1
 treated$trt <- 1
@@ -1668,50 +1654,53 @@ treated$trt <- 1
 untreated <- analytic_data_S1
 untreated$trt <- 0
 
-treated$pred <- predict(gee_weighted_model_norm, newdata = treated, type = "response")
-untreated$pred <- predict(gee_weighted_model_norm, newdata = untreated, type = "response")
+treated$pred <- predict(gee_sw_model, newdata = treated, type = "response")
+untreated$pred <- predict(gee_sw_model, newdata = untreated, type = "response")
 
 GEE_IOW2_1 <- mean(treated$pred)
 GEE_IOW2_0 <- mean(untreated$pred)
 
 rm(treated, untreated)
 
-gee_weighted_model_norm <- glmgee(
+gee_sw_model <- glmgee(
   outcome ~ trt,
-  data = analytic_data_S1_norm,
+  data = analytic_data_S1,
   id = unique_id,
   family = binomial(link = "identity"),
   corstr = "exchangeable",
-  weights = analytic_data_S1_norm$w_norm
+  weights = analytic_data_S1$sw
 )
 
-vcov_bias_corrected_norm <- vcov(gee_weighted_model_norm, type = "bias-corrected")
-se_bias_corrected_norm <- sqrt(diag(vcov_bias_corrected_norm))
+vcov_bias_corrected_sw <- vcov(gee_sw_model, type = "bias-corrected")
+se_bias_corrected_sw <- sqrt(diag(vcov_bias_corrected_sw))
 
 cbind(
-  Estimate = coef(gee_weighted_model_norm),
-  `Std.error` = se_bias_corrected_norm
+  Estimate = coef(gee_sw_model),
+  `Std.error` = se_bias_corrected_sw
 )
 
-GEE_IOW2 <- coef(gee_weighted_model_norm)[2]
+cbind(
+  estimate = gee_sw_model$coefficients[2]*100, 
+  std_error = se_bias_corrected_sw[2], 
+  lower = gee_sw_model$coefficients[2]*100 - se_bias_corrected_sw[2]*1.95, 
+  upper = gee_sw_model$coefficients[2]*100 + se_bias_corrected_sw[2]*1.95
+)
+
+GEE_IOW2 <- coef(gee_sw_model)[2]
 
 #### 12. FORMAT RESULTS ####
 
 results <- data.frame(
   "measure" = c('Proportion Events (A=1)', 'Proportion Events (A=0)', 'ATE'),
+  "Crude prior to restrictions" = c(crude_prior_1, crude_prior_0, crude_prior),
   "Crude" = c(crude_1, crude_0, crude),
   "Outcome Model" = c(OM_1, OM_0, OM),
-  "IOSW (sumN0)" = c(IOW1a_1, IOW1a_0, IOW1a),
-  "IOSW (sumW)" = c(IOW1b_1, IOW1b_0, IOW1b),
+  "IOSW" = c(IOW1_1, IOW1_0, IOW1),
   "Stabilized IOSW" = c(IOW2_1, IOW2_0, IOW2),
-  "IOSW w_norm (sumN0)" = c(IOW1c_1, IOW1c_0, IOW1c),
-  "IOSW w_norm (sumW)" = c(IOW1d_1, IOW1d_0, IOW1d),
-  "Doubly Robust (sumN0)" = c(DR1a_1, DR1a_0, DR1a),
-  "Doubly Robust (sumW)" = c(DR1b_1, DR1b_0, DR1b),
+  "Doubly Robust" = c(DR1_1, DR1_0, DR1),
   "Doubly Robust (stabilized)" = c(DR2_1, DR2_0, DR2),
-  "Doubly Robust (sumN0)" = c(DR1c_1, DR1c_0, DR1c),
-  "Doubly Robust (sumW)" = c(DR1d_1, DR1d_0, DR1d),
   "Doubly Robust (weighted regression)" = c(DR3_1, DR3_0, DR3),
+  "Doubly Robust (stabilized weighted regression)" = c(DR4_1, DR4_0, DR4),
   "Crude (GEE)" = c(GEE_crude_1, GEE_crude_0, GEE_crude),
   "IOSW (GEE)"= c(GEE_IOW1_1, GEE_IOW1_0, GEE_IOW1),
   "Stabilized IOSW (GEE)"= c(GEE_IOW2_1, GEE_IOW2_0, GEE_IOW2)
@@ -1720,10 +1709,218 @@ results <- data.frame(
 results %<>%
   mutate(across(where(is.numeric), ~ round(.x, 4)))
 
+results %<>%
+  mutate(across(where(is.numeric), ~ .x*100))
+
 # transpose results data frame for easier reading
 results_transposed <- as.data.frame(t(results[,-1]))
 colnames(results_transposed) <- results$measure
 results_transposed$Method <- rownames(results_transposed)
 results_transposed <- results_transposed[, c(ncol(results_transposed), 1:(ncol(results_transposed)-1))]
 rownames(results_transposed) <- NULL
+
+write.table (results_transposed , "results_table.csv", col.names = T, row.names=F, append= F, sep=',')
+
+#### 13. ADDITIONAL RESULTS ####
+
+## by subgroups of S=1
+
+S1data <- analytic_data %>% 
+  filter(S == 1)
+
+# check if results are the same w/wo stabilization
+S1data %<>%
+  mutate(
+    iosw_outcome= iosw * outcome,
+    siosw_outcome = siosw * outcome,
+    iptw_outcome = iptw * outcome,
+    siptw_outcome = siptw * outcome,
+    w_outcome = w * outcome,
+    sw_outcome = sw * outcome
+  )
+
+S1data %>%
+  group_by(trt) %>%
+  summarize(
+    iosw_Y = sum(iosw_outcome)/sum(iosw),
+    siosw_Y = sum(siosw_outcome)/sum(siosw),
+    iptw_Y = sum(iptw_outcome)/sum(iptw),
+    siptw_Y = sum(siptw_outcome)/sum(siptw),
+    w_Y = sum(w_outcome)/sum(w),
+    sw_Y = sum(sw_outcome)/sum(sw)
+  )
+
+A <- S1data$trt
+S <- S1data$S
+Y <- S1data$outcome
+iosw <- S1data$iosw
+siosw <- S1data$siosw
+iptw <- S1data$iptw
+siptw <- S1data$siptw
+w <- S1data$w
+sw <- S1data$sw
+
+S1_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
+S1_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
+S1_iosw = S1_iosw_1 - S1_iosw_0
+
+S1_siosw_1 <- (sum(siosw*A)^-1) * sum(A*siosw*Y)
+S1_siosw_0 <- (sum(siosw*(1-A))^-1) * sum((1-A)*siosw*Y)
+S1_siosw = S1_siosw_1 - S1_siosw_0
+
+S1_iptw_1 <- (sum(iptw*A)^-1) * sum(A*iptw*Y)
+S1_iptw_0 <- (sum(iptw*(1-A))^-1) * sum((1-A)*iptw*Y)
+S1_iptw = S1_iptw_1 - S1_iptw_0
+
+S1_siptw_1 <- (sum(siptw*A)^-1) * sum(A*siptw*Y)
+S1_siptw_0 <- (sum(siptw*(1-A))^-1) * sum((1-A)*siptw*Y)
+S1_siptw = S1_siptw_1 - S1_siptw_0
+
+S1_w_1 <- (sum(w*A)^-1) * sum(A*w*Y)
+S1_w_0 <- (sum(w*(1-A))^-1) * sum((1-A)*w*Y)
+S1_w = S1_w_1 - S1_w_0
+
+S1_sw_1 <- (sum(sw*A)^-1) * sum(A*sw*Y)
+S1_sw_0 <- (sum(sw*(1-A))^-1) * sum((1-A)*sw*Y)
+S1_sw = S1_sw_1 - S1_sw_0
+
+
+
+## by subgroups of S=0
+
+S0data <- analytic_data %>% 
+  filter(S == 0)
+
+# check if results are the same w/wo stabilization
+S0data %<>%
+  mutate(
+    iosw_outcome= iosw * outcome,
+    siosw_outcome = siosw * outcome,
+    iptw_outcome = iptw * outcome,
+    siptw_outcome = siptw * outcome,
+    w_outcome = w * outcome,
+    sw_outcome = sw * outcome
+  )
+
+S0data %>%
+  group_by(trt) %>%
+  summarize(
+    iosw_Y = sum(iosw_outcome)/sum(iosw),
+    siosw_Y = sum(siosw_outcome)/sum(siosw),
+    iptw_Y = sum(iptw_outcome)/sum(iptw),
+    siptw_Y = sum(siptw_outcome)/sum(siptw),
+    w_Y = sum(w_outcome)/sum(w),
+    sw_Y = sum(sw_outcome)/sum(sw)
+  )
+
+A <- S0data$trt
+S <- S0data$S
+Y <- S0data$outcome
+iosw <- S0data$iosw
+siosw <- S0data$siosw
+iptw <- S0data$iptw
+siptw <- S0data$siptw
+w <- S0data$w
+sw <- S0data$sw
+
+S0_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
+S0_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
+S0_iosw = S0_iosw_1 - S0_iosw_0
+
+S0_siosw_1 <- (sum(siosw*A)^-1) * sum(A*siosw*Y)
+S0_siosw_0 <- (sum(siosw*(1-A))^-1) * sum((1-A)*siosw*Y)
+S0_siosw = S0_siosw_1 - S0_siosw_0
+
+S0_iptw_1 <- (sum(iptw*A)^-1) * sum(A*iptw*Y)
+S0_iptw_0 <- (sum(iptw*(1-A))^-1) * sum((1-A)*iptw*Y)
+S0_iptw = S0_iptw_1 - S0_iptw_0
+
+S0_siptw_1 <- (sum(siptw*A)^-1) * sum(A*siptw*Y)
+S0_siptw_0 <- (sum(siptw*(1-A))^-1) * sum((1-A)*siptw*Y)
+S0_siptw = S0_siptw_1 - S0_siptw_0
+
+S0_w_1 <- (sum(w*A)^-1) * sum(A*w*Y)
+S0_w_0 <- (sum(w*(1-A))^-1) * sum((1-A)*w*Y)
+S0_w = S0_w_1 - S0_w_0
+
+S0_sw_1 <- (sum(sw*A)^-1) * sum(A*sw*Y)
+S0_sw_0 <- (sum(sw*(1-A))^-1) * sum((1-A)*sw*Y)
+S0_sw = S0_sw_1 - S0_sw_0
+
+
+
+# whole population
+A <- analytic_data$trt
+S <- analytic_data$S
+Y <- analytic_data$outcome
+iosw <- analytic_data$iosw
+siosw <- analytic_data$siosw
+iptw <- analytic_data$iptw
+siptw <- analytic_data$siptw
+w <- analytic_data$w
+sw <- analytic_data$sw
+
+iosw_1 <- (sum(iosw)^-1) * sum(A*S*iosw*Y)
+iosw_0 <- (sum(iosw)^-1) * sum((1-A)*S*iosw*Y)
+iosw = iosw_1 - iosw_0
+
+siosw_1 <- (sum(siosw)^-1) * sum(A*S*siosw*Y)
+siosw_0 <- (sum(siosw)^-1) * sum((1-A)*S*siosw*Y)
+siosw = siosw_1 - siosw_0
+
+iptw_1 <- (sum(iptw)^-1) * sum(A*S*iptw*Y)
+iptw_0 <- (sum(iptw)^-1) * sum((1-A)*S*iptw*Y)
+iptw = iptw_1 - iptw_0
+
+siptw_1 <- (sum(siptw)^-1) * sum(A*S*siptw*Y)
+siptw_0 <- (sum(siptw)^-1) * sum((1-A)*S*siptw*Y)
+siptw = siptw_1 - siptw_0
+
+w_1 <- (sum(w)^-1) * sum(A*S*w*Y)
+w_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+w = w_1 - w_0
+
+sw_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
+sw_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
+sw = sw_1 - sw_0
+
+# format additional results
+
+additional_results <- data.frame(
+  "Group and weight" = c('Proportion Events (A=1)', 'Proportion Events (A=0)', 'ATE'),  
+  "S1 IOSW" = c(S1_iosw_1, S1_iosw_0, S1_iosw),
+  "S1 SIOSW" = c(S1_siosw_1, S1_siosw_0, S1_siosw),
+  "S1 IPTW" = c(S1_iptw_1, S1_iptw_0, S1_iptw),
+  "S1 SIPTW" = c(S1_siptw_1, S1_siptw_0, S1_siptw),
+  "S1 combo w" = c(S1_w_1, S1_w_0, S1_w),
+  "S1 combo sw" = c(S1_sw_1, S1_sw_0, S1_sw),
+  "S0 IOSW" = c(S0_iosw_1, S0_iosw_0, S0_iosw),
+  "S0 SIOSW" = c(S0_siosw_1, S0_siosw_0, S0_siosw),
+  "S0 IPTW" = c(S0_iptw_1, S0_iptw_0, S0_iptw),
+  "S0 SIPTW" = c(S0_siptw_1, S0_siptw_0, S0_siptw),
+  "S0 combo w" = c(S0_w_1, S0_w_0, S0_w),
+  "S0 combo sw" = c(S0_sw_1, S0_sw_0, S0_sw),
+  "all IOSW" = c(iosw_1, iosw_0, iosw),
+  "all SIOSW" = c(siosw_1, siosw_0, siosw),
+  "all IPTW" = c(iptw_1, iptw_0, iptw),
+  "all SIPTW" = c(siptw_1, siptw_0, siptw),
+  "all combo w" = c(w_1, w_0, w),
+  "all combo sw" = c(sw_1, sw_0, sw)
+)
+
+additional_results %<>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+additional_results %<>%
+  mutate(across(where(is.numeric), ~ .x*100))
+
+additional_results_transposed <- as.data.frame(t(additional_results[,-1]))
+colnames(additional_results_transposed) <- additional_results$Group.and.weight
+additional_results_transposed$Group.and.weight <- rownames(additional_results_transposed)
+additional_results_transposed <- additional_results_transposed[, c(ncol(additional_results_transposed), 1:(ncol(additional_results_transposed)-1))]
+rownames(additional_results_transposed) <- NULL
+
+write.table (additional_results_transposed , "additional_results_table.csv", col.names = T, row.names=F, append= F, sep=',')
+
+
 

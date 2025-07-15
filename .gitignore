@@ -6,6 +6,10 @@
 .RData
 .RDataTmp
 
+# Test codes
+bootstrap_debug.R
+summarize_weights.R
+
 # User-specific files
 .Ruserdata
 
