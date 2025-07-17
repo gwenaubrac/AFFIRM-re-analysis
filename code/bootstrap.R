@@ -37,7 +37,7 @@ library(ggplot2)
 # no_aspirin
 # restrict_GA_10w
 
-setwd("Z:/RPLATT/GWEN-OHRI/aspirin")
+setwd("Z:/RPLATT/GWEN-OHRI/main_results")
 data <- readRDS("../data_clean.R")
 
 data %<>% # for sensitivity where target multi-site, switch this indicator
@@ -45,8 +45,8 @@ data %<>% # for sensitivity where target multi-site, switch this indicator
 
 # for subgroup analyses by aspirin, add this filter
 # and also remove aspirin cov from models
-data %<>%
-  filter(aspirin == 0)
+# data %<>%
+#   filter(aspirin == 0)
 
 setDT(data)
 
@@ -125,12 +125,12 @@ bs <- function(data, indices) {
     glm(
       outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin, 
+        aspirin, 
       data = S1data_A1,
       family = binomial (link = "logit")
     )
@@ -145,12 +145,12 @@ bs <- function(data, indices) {
     glm(formula =       
           outcome ~
           age__years_ +
-          #any_pe +
-          #any_preterm +
+          any_pe +
+          any_preterm +
           any_sga +
           bmi_above_30 +
           smoking_bin,
-          #aspirin,
+          aspirin,
         data = S1data_A0,
         family = binomial (link = "logit"))
   }, error = function(e) {
@@ -162,18 +162,18 @@ bs <- function(data, indices) {
   
   if (is.null(OM1mod) | is.null(OM0mod)) {
     
-    OM_1 <- NA
-    OM_0 <- NA
-    OM <- NA
+    S1_OM_1 <- NA
+    S1_OM_0 <- NA
+    S1_OM <- NA
     
   } else {
     
     d$p1 <- predict(OM1mod, newdata = d, type = "response")
     d$p0 <- predict(OM0mod, newdata = d, type = "response")
-    S0sub <- subset(d, S == 0)
-    OM_1 <- mean(S0sub$p1)
-    OM_0 <- mean(S0sub$p0)
-    OM <- mean(S0sub$p1) - mean(S0sub$p0)  
+    S0_data <- subset(d, S == 0)
+    S1_OM_1 <- mean(S0_data$p1)
+    S1_OM_0 <- mean(S0_data$p0)
+    S1_OM <- mean(S0_data$p1) - mean(S0_data$p0)  
     
     }
   
@@ -187,12 +187,12 @@ bs <- function(data, indices) {
     glm(
       outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin, 
-        #aspirin, 
+        aspirin, 
       data = data_A1,
       family = binomial (link = "logit")
     )
@@ -207,12 +207,12 @@ bs <- function(data, indices) {
     glm(formula =       
           outcome ~
           age__years_ +
-          #any_pe +
-          #any_preterm +
+          any_pe +
+          any_preterm +
           any_sga +
           bmi_above_30 +
           smoking_bin,
-          #aspirin,
+          aspirin,
         data = data_A0,
         family = binomial (link = "logit"))
   }, error = function(e) {
@@ -249,8 +249,8 @@ bs <- function(data, indices) {
         any_sga + 
         bmi_above_30 +
         smoking_bin, 
-        #aspirin +
-        #aspirin * ns(age__years_, df = 2),
+        aspirin +
+        aspirin * ns(age__years_, df = 2),
       family = binomial(),
       data = d
     )
@@ -265,7 +265,8 @@ bs <- function(data, indices) {
   
 
   d$ps <- predict(w_reg, newdata = d, type = "response")
-  d[, iosw := fifelse(S == 1, (1 - ps) / ps, 1)]
+  d[, iosw := fifelse(S == 1, (1 - ps) / ps, 0)] # only S1 patients get a weight
+  d[, iosw_all := fifelse(S == 1, (1 - ps) / ps, 1)] # all patients get a weight (w=1 for S0)
   
   marg_s_model <- tryCatch({
     glm(S ~ 1, family = binomial(), data = d)
@@ -278,7 +279,7 @@ bs <- function(data, indices) {
   marg_ps <- predict(marg_s_model, newdata = d, type = "response")
   odds_s <- marg_ps/(1-marg_ps)
   d[, siosw := fifelse(S == 1, odds_s*iosw, 1)]
-  
+  d[, siosw_all := fifelse(S == 1, odds_s*iosw_all, 1)]
   
   
   #### e) ESTIMATE IPTW ####
@@ -294,7 +295,7 @@ bs <- function(data, indices) {
         any_sga + 
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = wmulti_d,
       weights = siosw, # use SIOSW rather than IOSW for improved stability
       family = binomial(link = "logit")
@@ -342,7 +343,7 @@ bs <- function(data, indices) {
         any_sga + 
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = single_d,
       family = binomial(link = "logit")
     )
@@ -375,7 +376,9 @@ bs <- function(data, indices) {
   
   d[, `:=`(
     w = iosw * iptw,
-    sw = siosw * siptw
+    sw = siosw * siptw,
+    w_all = iosw_all * iptw,
+    sw_all = siosw_all * siptw
   )]
   
   
@@ -389,21 +392,21 @@ bs <- function(data, indices) {
   Y <- d$outcome
   
   # in weighted multi-site patients:
-  IOW1_1 <- (sum(w)^-1) * sum(A*S*w*Y)
-  IOW1_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
-  IOW1 <- IOW1_1 - IOW1_0
+  S1_IOW1_1 <- (sum(w)^-1) * sum(A*S*w*Y)
+  S1_IOW1_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+  S1_IOW1 <- S1_IOW1_1 - S1_IOW1_0
   
-  IOW2_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
-  IOW2_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
-  IOW2 <- IOW2_1 - IOW2_0
+  S1_IOW2_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
+  S1_IOW2_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
+  S1_IOW2 <- S1_IOW2_1 - S1_IOW2_0
   
   # in all patients:
-  all_IOW1_1 <- (sum(w)^-1) * sum(A*w*Y)
-  all_IOW1_0 <- (sum(w)^-1) * sum((1-A)*w*Y)
+  all_IOW1_1 <- (sum(w_all)^-1) * sum(A*w_all*Y)
+  all_IOW1_0 <- (sum(w_all)^-1) * sum((1-A)*w_all*Y)
   all_IOW1 <- all_IOW1_1 - all_IOW1_0
   
-  all_IOW2_1 <- (sum(sw)^-1) * sum(A*sw*Y)
-  all_IOW2_0 <- (sum(sw)^-1) * sum((1-A)*sw*Y)
+  all_IOW2_1 <- (sum(sw_all)^-1) * sum(A*sw_all*Y)
+  all_IOW2_0 <- (sum(sw_all)^-1) * sum((1-A)*sw_all*Y)
   all_IOW2 <- all_IOW2_1 - all_IOW2_0
   
   
@@ -413,30 +416,28 @@ bs <- function(data, indices) {
   # in weighted S==1 patients
   if (is.null(OM0mod) | is.null(OM1mod)) {
     
-    DR1_1 <- NA
-    DR1_0 <- NA
-    DR1 <- NA
-    DR2_1 <- NA
-    DR2_0 <- NA
-    DR2 <- NA
+    S1_DR1_1 <- NA
+    S1_DR1_0 <- NA
+    S1_DR1 <- NA
+    S1_DR2_1 <- NA
+    S1_DR2_0 <- NA
+    S1_DR2 <- NA
     
   } else {
     
     p1 <- d$p1
     p0 <- d$p0
     
-    DR1_1 <- (sum(w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-    DR1_0 <- (sum(w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
-    DR1 <- DR1_1 - DR1_0
+    S1_DR1_1 <- (sum(w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
+    S1_DR1_0 <- (sum(w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+    S1_DR1 <- S1_DR1_1 - S1_DR1_0
     
-    DR2_1 <- (sum(sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
-    DR2_0 <- (sum(sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
-    DR2 <- DR2_1 - DR2_0
+    S1_DR2_1 <- (sum(sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
+    S1_DR2_0 <- (sum(sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
+    S1_DR2 <- S1_DR2_1 - S1_DR2_0
     
   }
   
-
-  S0data <- subset(d, S == 0)
   S1data_A1 <- subset(d, S == 1 & trt == 1)
   S1data_A0 <- subset(d, S == 1 & trt == 0)
   
@@ -445,12 +446,12 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = S1data_A1,
       weights = S1data_A1$w,
       family = binomial (link = "logit")
@@ -467,12 +468,12 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = S1data_A0,
       weights = S1data_A0$w,
       family = binomial (link = "logit")
@@ -486,17 +487,17 @@ bs <- function(data, indices) {
   
   if (is.null(DR1mod_w) | is.null(DR0mod_w)) {
     
-    DR3_1 <- NA
-    DR3_0 <- NA
-    DR3 <- NA
+    S1_DR3_1 <- NA
+    S1_DR3_0 <- NA
+    S1_DR3 <- NA
     
   } else {
     
     p1_w <- predict(DR1mod_w, newdata = S0data, type = "response")
     p0_w <- predict(DR0mod_w, newdata = S0data, type = "response")
-    DR3_1 <- mean(p1_w)
-    DR3_0 <- mean(p0_w)
-    DR3 <- DR3_1 - DR3_0
+    S1_DR3_1 <- mean(p1_w)
+    S1_DR3_0 <- mean(p0_w)
+    S1_DR3 <- S1_DR3_1 - S1_DR3_0
     
     }
   
@@ -505,12 +506,12 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = S1data_A1,
       weights = S1data_A1$sw,
       family = binomial (link = "logit")
@@ -528,12 +529,12 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = S1data_A0,
       weights = S1data_A0$sw,
       family = binomial (link = "logit")
@@ -547,17 +548,17 @@ bs <- function(data, indices) {
   
   if (is.null (DR1mod_sw) | is.null(DR0mod_sw)) {
     
-   DR4_1 <- NA
-   DR4_0 <- NA
-   DR4 <- NA
+    S1_DR4_1 <- NA
+    S1_DR4_0 <- NA
+    S1_DR4 <- NA
    
   } else {
     p1_sw <- predict(DR1mod_sw, newdata = S0data, type = "response")
     p0_sw <- predict(DR0mod_sw, newdata = S0data, type = "response")
     
-    DR4_1 <- mean(p1_sw)
-    DR4_0 <- mean(p0_sw)
-    DR4 <- DR4_1 - DR4_0
+    S1_DR4_1 <- mean(p1_sw)
+    S1_DR4_0 <- mean(p0_sw)
+    S1_DR4 <- S1_DR4_1 - S1_DR4_0
   }
   
   # in all patients
@@ -572,15 +573,15 @@ bs <- function(data, indices) {
     
   } else {
     
-    all_p1 <- d$p1
-    all_p0 <- d$p0
+    all_p1 <- d$all_p1
+    all_p0 <- d$all_p0
     
-    all_DR1_1 <- (sum(w)^-1) * sum(A*w*(Y-all_p1) + all_p1)
-    all_DR1_0 <- (sum(w)^-1) * sum((1-A)*w*(Y-all_p0) + all_p0)
+    all_DR1_1 <- (sum(w_all)^-1) * sum(A*w_all*(Y-all_p1) + all_p1)
+    all_DR1_0 <- (sum(w_all)^-1) * sum((1-A)*w_all*(Y-all_p0) + all_p0)
     all_DR1 <- all_DR1_1 - all_DR1_0
     
-    all_DR2_1 <- (sum(sw)^-1) * sum(A*sw*(Y-all_p1) + all_p1)
-    all_DR2_0 <- (sum(sw)^-1) * sum((1-A)*sw*(Y-all_p0) + all_p0)
+    all_DR2_1 <- (sum(sw_all)^-1) * sum(A*sw_all*(Y-all_p1) + all_p1)
+    all_DR2_0 <- (sum(sw_all)^-1) * sum((1-A)*sw_all*(Y-all_p0) + all_p0)
     all_DR2 <- all_DR2_1 - all_DR2_0
     
   }
@@ -590,14 +591,14 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = data_A1,
-      weights = data_A1$w,
+      weights = data_A1$w_all,
       family = binomial (link = "logit")
     )
   }, error = function(e) {
@@ -611,14 +612,14 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = data_A0,
-      weights = data_A0$w,
+      weights = data_A0$w_all,
       family = binomial (link = "logit")
     )
   }, error = function(e) {
@@ -649,14 +650,14 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = data_A1,
-      weights = data_A1$sw,
+      weights = data_A1$sw_all,
       family = binomial (link = "logit")
     )
   },
@@ -672,14 +673,14 @@ bs <- function(data, indices) {
       formula =       
         outcome ~
         age__years_ +
-        #any_pe +
-        #any_preterm +
+        any_pe +
+        any_preterm +
         any_sga +
         bmi_above_30 +
         smoking_bin,
-        #aspirin,
+        aspirin,
       data = data_A0,
-      weights = data_A0$sw,
+      weights = data_A0$sw_all,
       family = binomial (link = "logit")
     )
   }, error = function(e) {
@@ -709,8 +710,96 @@ bs <- function(data, indices) {
   
   #### h) GEE ####
   
-  # in all patients:
-  # crude GEE
+  S1_data <- d %>% 
+    filter(S == 1)
+  
+  S0_data <- d %>% 
+    filter(S == 0)
+  
+  ## crude GEE ##
+  
+  # S1 patients
+  S1gee_crude_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      id = unique_id,
+      data = S1_data,
+      family = binomial("logit"),
+      corstr = "exchangeable"
+    )
+  }, error = function(e) {
+    cat("Error with S1 GEE crude \n")
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    failures <<- failures + 1
+    return(NULL)
+  })
+  
+  if (is.null(S1gee_crude_model)) {
+    
+    S1_GEE_crude_1 <- NA
+    S1_GEE_crude_0 <- NA
+    S1_GEE_crude <- NA
+    
+  } else {
+    
+    treated <- S1data
+    treated$trt <- 1
+    
+    untreated <- S1data
+    untreated$trt <- 0
+    
+    treated$pred <- predict(S1gee_crude_model, newdata = S1treated, type = "response")
+    untreated$pred <- predict(S1gee_crude_model, newdata = S1untreated, type = "response")
+    
+    S1_GEE_crude_1 <- mean(S1treated$pred)
+    S1_GEE_crude_0 <- mean(S1untreated$pred)
+    S1_GEE_crude <- S1_GEE_crude_1 - S1_GEE_crude_0
+    
+    rm(treated, untreated)
+    
+  }
+  
+  # S0 patients
+  S0gee_crude_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      id = unique_id,
+      data = S0_data,
+      family = binomial("logit"),
+      corstr = "exchangeable"
+    )
+  }, error = function(e) {
+    cat("Error with S0 GEE crude \n")
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    failures <<- failures + 1
+    return(NULL)
+  })
+  if (is.null(S0gee_crude_model)) {
+    
+    S0_GEE_crude_1 <- NA
+    S0_GEE_crude_0 <- NA
+    S0_GEE_crude <- NA
+    
+  } else {
+    
+    treated <- S0_data
+    treated$trt <- 1
+    
+    untreated <- S0_data
+    untreated$trt <- 0
+    
+    treated$pred <- predict(S0gee_crude_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S0gee_crude_model, newdata = untreated, type = "response")
+    
+    S0_GEE_crude_1 <- mean(treated$pred)
+    S0_GEE_crude_0 <- mean(untreated$pred)
+    S0_GEE_crude <- S0_GEE_crude_1 - S0_GEE_crude_0
+    
+    rm(treated, untreated)
+    
+  }
+  
+  # all patients
   gee_crude_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -727,9 +816,9 @@ bs <- function(data, indices) {
   })
   if (is.null(gee_crude_model)) {
     
-    GEE_crude_1 <- NA
-    GEE_crude_0 <- NA
-    GEE_crude <- NA
+    all_GEE_crude_1 <- NA
+    all_GEE_crude_0 <- NA
+    all_GEE_crude <- NA
     
   } else {
     
@@ -742,18 +831,19 @@ bs <- function(data, indices) {
     treated$pred <- predict(gee_crude_model, newdata = treated, type = "response")
     untreated$pred <- predict(gee_crude_model, newdata = untreated, type = "response")
     
-    GEE_crude_1 <- mean(treated$pred)
-    GEE_crude_0 <- mean(untreated$pred)
-    GEE_crude <- GEE_crude_1 - GEE_crude_0
+    all_GEE_crude_1 <- mean(treated$pred)
+    all_GEE_crude_0 <- mean(untreated$pred)
+    all_GEE_crude <- all_GEE_crude_1 - all_GEE_crude_0
     
     rm(treated, untreated)
     
   }
   
-  # weighted GEE
-  S1_data <- d %>% 
-    filter(S == 1)
   
+  
+  ## unstabilized weighted GEE
+  
+  # S=1 patients
   gee_w_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -772,9 +862,9 @@ bs <- function(data, indices) {
   
   if (is.null(gee_w_model)) {
     
-    GEE_IOW1_1 <- NA
-    GEE_IOW1_0 <- NA
-    GEE_IOW1 <- NA
+    S1_GEE_IOW1_1 <- NA
+    S1_GEE_IOW1_0 <- NA
+    S1_GEE_IOW1 <- NA
     
   } else {
     
@@ -787,14 +877,100 @@ bs <- function(data, indices) {
     treated$pred <- predict(gee_w_model, newdata = treated, type = "response")
     untreated$pred <- predict(gee_w_model, newdata = untreated, type = "response")
     
-    GEE_IOW1_1 <- mean(treated$pred)
-    GEE_IOW1_0 <- mean(untreated$pred)
-    GEE_IOW1 <- GEE_IOW1_1 - GEE_IOW1_0
+    S1_GEE_IOW1_1 <- mean(treated$pred)
+    S1_GEE_IOW1_0 <- mean(untreated$pred)
+    S1_GEE_IOW1 <- S1_GEE_IOW1_1 - S1_GEE_IOW1_0
     
+    rm(treated, untreated)
   }
     
   
-  # stabilized weighted GEE
+  # S=0 patients
+  gee_w_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      data = S0_data,
+      id = unique_id,
+      family = binomial(link = "logit"),
+      corstr = "exchangeable",
+      weights = S1_data$w
+    )
+  }, error = function(e) {
+    cat("Error with GEE w \n")
+    failures <<- failures + 1
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    return(NULL)
+  })
+  
+  if (is.null(gee_w_model)) {
+    
+    S0_GEE_IOW1_1 <- NA
+    S0_GEE_IOW1_0 <- NA
+    S0_GEE_IOW1 <- NA
+    
+  } else {
+    
+    treated <- S0_data
+    treated$trt <- 1
+    
+    untreated <- S0_data
+    untreated$trt <- 0
+    
+    treated$pred <- predict(gee_w_model, newdata = treated, type = "response")
+    untreated$pred <- predict(gee_w_model, newdata = untreated, type = "response")
+    
+    S0_GEE_IOW1_1 <- mean(treated$pred)
+    S0_GEE_IOW1_0 <- mean(untreated$pred)
+    S0_GEE_IOW1 <- S0_GEE_IOW1_1 - S0_GEE_IOW1_0
+    
+    rm(treated, untreated)
+  }
+  
+  
+  # all patients
+  all_gee_w_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      data = d,
+      id = unique_id,
+      family = binomial(link = "logit"),
+      corstr = "exchangeable",
+      weights = d$w_all
+    )
+  }, error = function(e) {
+    cat("Error with all GEE w \n")
+    failures <<- failures + 1
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    return(NULL)
+  })
+  
+  if (is.null(all_gee_w_model)) {
+    
+    all_GEE_IOW1_1 <- NA
+    all_GEE_IOW1_0 <- NA
+    all_GEE_IOW1 <- NA
+    
+  } else {
+    
+    treated <- d
+    treated$trt <- 1
+    
+    untreated <- d
+    untreated$trt <- 0
+    
+    treated$pred <- predict(all_gee_w_model, newdata = treated, type = "response")
+    untreated$pred <- predict(all_gee_w_model, newdata = untreated, type = "response")
+    
+    all_GEE_IOW1_1 <- mean(treated$pred)
+    all_GEE_IOW1_0 <- mean(untreated$pred)
+    all_GEE_IOW1 <- all_GEE_IOW1_1 - all_GEE_IOW1_0
+    
+    rm(untreated, treated)
+  }
+  
+  ## stabilized weighted GEE
+  
+  # S1 patients
   gee_sw_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -813,9 +989,9 @@ bs <- function(data, indices) {
   
   if (is.null(gee_sw_model)) {
     
-    GEE_IOW2_1 <- NA
-    GEE_IOW2_0 <- NA
-    GEE_IOW2 <- NA
+    S1_GEE_IOW2_1 <- NA
+    S1_GEE_IOW2_0 <- NA
+    S1_GEE_IOW2 <- NA
     
   } else {
     
@@ -828,146 +1004,57 @@ bs <- function(data, indices) {
     treated$pred <- predict(gee_sw_model, newdata = treated, type = "response")
     untreated$pred <- predict(gee_sw_model, newdata = untreated, type = "response")
     
-    GEE_IOW2_1 <- mean(treated$pred)
-    GEE_IOW2_0 <- mean(untreated$pred)
-    GEE_IOW2 <- GEE_IOW2_1 - GEE_IOW2_0
+    S1_GEE_IOW2_1 <- mean(treated$pred)
+    S1_GEE_IOW2_0 <- mean(untreated$pred)
+    S1_GEE_IOW2 <- S1_GEE_IOW2_1 - S1_GEE_IOW2_0
     rm(treated, untreated)
     
   }
   
-  # S==1 patients only 
-  S1data <- d %>% filter(S == 1)
-  
-  # crude GEE
-  S1gee_crude_model <- tryCatch({
+  # S0 patients
+  gee_sw_model <- tryCatch({
     glmgee(
       outcome ~ trt,
-      id = unique_id,
-      data = S1data,
-      family = binomial("logit"),
-      corstr = "exchangeable"
-    )
-  }, error = function(e) {
-    cat("Error with S1 GEE crude \n")
-    saveRDS(d, file = "bad_bootstrap_sample.rds")
-    failures <<- failures + 1
-    return(NULL)
-  })
-  
-  if (is.null(S1gee_crude_model)) {
-    
-    S1GEE_crude_1 <- NA
-    S1GEE_crude_0 <- NA
-    S1GEE_crude <- NA
-    
-  } else {
-    
-    S1treated <- S1data
-    S1treated$trt <- 1
-    
-    S1untreated <- S1data
-    S1untreated$trt <- 0
-    
-    S1treated$pred <- predict(S1gee_crude_model, newdata = S1treated, type = "response")
-    S1untreated$pred <- predict(S1gee_crude_model, newdata = S1untreated, type = "response")
-    
-    S1GEE_crude_1 <- mean(S1treated$pred)
-    S1GEE_crude_0 <- mean(S1untreated$pred)
-    S1GEE_crude <- S1GEE_crude_1 - S1GEE_crude_0
-    
-    rm(S1treated, S1untreated)
-    
-  }
-  
-  # S==0 patients only 
-  S0data <- d %>% filter(S == 0)
-  
-  # crude GEE
-  S0gee_crude_model <- tryCatch({
-    glmgee(
-      outcome ~ trt,
-      id = unique_id,
-      data = S0data,
-      family = binomial("logit"),
-      corstr = "exchangeable"
-    )
-  }, error = function(e) {
-    cat("Error with S0 GEE crude \n")
-    saveRDS(d, file = "bad_bootstrap_sample.rds")
-    failures <<- failures + 1
-    return(NULL)
-  })
-  if (is.null(S0gee_crude_model)) {
-    
-    S0GEE_crude_1 <- NA
-    S0GEE_crude_0 <- NA
-    S0GEE_crude <- NA
-    
-  } else {
-    
-    S0treated <- S0data
-    S0treated$trt <- 1
-    
-    S0untreated <- S0data
-    S0untreated$trt <- 0
-    
-    S0treated$pred <- predict(S0gee_crude_model, newdata = S0treated, type = "response")
-    S0untreated$pred <- predict(S0gee_crude_model, newdata = S0untreated, type = "response")
-    
-    S0GEE_crude_1 <- mean(S0treated$pred)
-    S0GEE_crude_0 <- mean(S0untreated$pred)
-    S0GEE_crude <- S0GEE_crude_1 - S0GEE_crude_0
-    
-    rm(S0treated, S0untreated)
-    
-  }
-  
-  
-  # in all patients
-  # weighted GEE
-  
-  all_gee_w_model <- tryCatch({
-    glmgee(
-      outcome ~ trt,
-      data = d,
+      data = S0_data,
       id = unique_id,
       family = binomial(link = "logit"),
       corstr = "exchangeable",
-      weights = d$w
+      weights = S0_data$sw
     )
   }, error = function(e) {
-    cat("Error with all GEE w \n")
+    cat("Error with GEE sw \n")
     failures <<- failures + 1
     saveRDS(d, file = "bad_bootstrap_sample.rds")
     return(NULL)
   })
   
-  if (is.null(all_gee_w_model)) {
+  if (is.null(gee_sw_model)) {
     
-    all_GEE_IOW1_1 <- NA
-    all_GEE_IOW1_0 <- NA
-    all_GEE_IOW1 <- NA
+    S0_GEE_IOW2_1 <- NA
+    S0_GEE_IOW2_0 <- NA
+    S0_GEE_IOW2 <- NA
     
   } else {
     
-    all_treated <- d
-    all_treated$trt <- 1
+    treated <- S0_data
+    treated$trt <- 1
     
-    all_untreated <- d
-    all_untreated$trt <- 0
+    untreated <- S0_data
+    untreated$trt <- 0
     
-    all_treated$pred <- predict(all_gee_w_model, newdata = all_treated, type = "response")
-    all_untreated$pred <- predict(all_gee_w_model, newdata = all_untreated, type = "response")
+    treated$pred <- predict(gee_sw_model, newdata = treated, type = "response")
+    untreated$pred <- predict(gee_sw_model, newdata = untreated, type = "response")
     
-    all_GEE_IOW1_1 <- mean(all_treated$pred)
-    all_GEE_IOW1_0 <- mean(all_untreated$pred)
-    all_GEE_IOW1 <- all_GEE_IOW1_1 - all_GEE_IOW1_0
+    S0_GEE_IOW2_1 <- mean(treated$pred)
+    S0_GEE_IOW2_0 <- mean(untreated$pred)
+    S0_GEE_IOW2 <- S0_GEE_IOW2_1 - S0_GEE_IOW2_0
+    rm(treated, untreated)
     
-    rm(all_untreated, all_treated)
   }
   
+  
+  
   # in all patients
-  # stabilized weighted GEE
   all_gee_sw_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -975,7 +1062,7 @@ bs <- function(data, indices) {
       id = unique_id,
       family = binomial(link = "logit"),
       corstr = "exchangeable",
-      weights = d$sw
+      weights = d$all_sw
     )
   }, error = function(e) {
     cat("Error with all GEE sw \n")
@@ -992,20 +1079,20 @@ bs <- function(data, indices) {
     
   } else {
     
-    all_treated <- d
-    all_treated$trt <- 1
+    treated <- d
+    treated$trt <- 1
     
-    all_untreated <- d
-    all_untreated$trt <- 0
+    untreated <- d
+    untreated$trt <- 0
     
-    all_treated$pred <- predict(all_gee_sw_model, newdata = all_treated, type = "response")
-    all_untreated$pred <- predict(all_gee_sw_model, newdata = all_untreated, type = "response")
+    treated$pred <- predict(all_gee_sw_model, newdata = treated, type = "response")
+    untreated$pred <- predict(all_gee_sw_model, newdata = untreated, type = "response")
     
-    all_GEE_IOW2_1 <- mean(all_treated$pred)
-    all_GEE_IOW2_0 <- mean(all_untreated$pred)
+    all_GEE_IOW2_1 <- mean(treated$pred)
+    all_GEE_IOW2_0 <- mean(untreated$pred)
     all_GEE_IOW2 <- all_GEE_IOW2_1 - all_GEE_IOW2_0
     
-    rm(all_treated, all_untreated)
+    rm(treated, untreated)
     
   }
   
@@ -1015,7 +1102,7 @@ bs <- function(data, indices) {
   
   ## by subgroups of S=0
   
-  S1data <- d %>% 
+  S1_data <- d %>% 
     filter(S == 1)
   
   A <- S1data$trt
@@ -1103,89 +1190,86 @@ bs <- function(data, indices) {
   siosw <- d$siosw
   iptw <- d$iptw
   siptw <- d$siptw
-  w <- d$w
-  sw <- d$sw
+  w <- d$w_all
+  sw <- d$sw_all
   
-  iosw_1 <- (sum(iosw)^-1) * sum(A*S*iosw*Y)
-  iosw_0 <- (sum(iosw)^-1) * sum((1-A)*S*iosw*Y)
-  iosw = iosw_1 - iosw_0
+  all_iosw_1 <- (sum(iosw)^-1) * sum(A*S*iosw*Y)
+  all_iosw_0 <- (sum(iosw)^-1) * sum((1-A)*S*iosw*Y)
+  all_iosw = all_iosw_1 - all_iosw_0
   
-  siosw_1 <- (sum(siosw)^-1) * sum(A*S*siosw*Y)
-  siosw_0 <- (sum(siosw)^-1) * sum((1-A)*S*siosw*Y)
-  siosw = siosw_1 - siosw_0
+  all_siosw_1 <- (sum(siosw)^-1) * sum(A*S*siosw*Y)
+  all_siosw_0 <- (sum(siosw)^-1) * sum((1-A)*S*siosw*Y)
+  all_siosw = all_siosw_1 - all_siosw_0
   
-  iptw_1 <- (sum(iptw)^-1) * sum(A*S*iptw*Y)
-  iptw_0 <- (sum(iptw)^-1) * sum((1-A)*S*iptw*Y)
-  iptw = iptw_1 - iptw_0
+  all_iptw_1 <- (sum(iptw)^-1) * sum(A*S*iptw*Y)
+  all_iptw_0 <- (sum(iptw)^-1) * sum((1-A)*S*iptw*Y)
+  all_iptw = all_iptw_1 - all_iptw_0
   
-  siptw_1 <- (sum(siptw)^-1) * sum(A*S*siptw*Y)
-  siptw_0 <- (sum(siptw)^-1) * sum((1-A)*S*siptw*Y)
-  siptw = siptw_1 - siptw_0
+  all_siptw_1 <- (sum(siptw)^-1) * sum(A*S*siptw*Y)
+  all_siptw_0 <- (sum(siptw)^-1) * sum((1-A)*S*siptw*Y)
+  all_siptw = all_siptw_1 - all_siptw_0
   
-  w_1 <- (sum(w)^-1) * sum(A*S*w*Y)
-  w_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
-  w = w_1 - w_0
+  all_w_1 <- (sum(w)^-1) * sum(A*S*w*Y)
+  all_w_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+  all_w = all_w_1 - all_w_0
   
-  sw_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
-  sw_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
-  sw = sw_1 - sw_0
+  all_sw_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
+  all_sw_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
+  all_sw = all_sw_1 - all_sw_0
   
   
   
   #### j) RESULTS ####
   
   results <- c(
-    all_crude_prior_1,
-    all_crude_prior_0,
-    all_crude_prior,
     S1crude_prior_1,
     S1crude_prior_0,
     S1crude_prior,
     S0crude_prior_1,
     S0crude_prior_0,
     S0crude_prior,
-    all_crude_1,
-    all_crude_0,
-    all_crude,
+    all_crude_prior_1,
+    all_crude_prior_0,
+    all_crude_prior,
     S1crude_1,
     S1crude_0,
     S1crude,
     S0crude_1,
     S0crude_0,
     S0crude,
-    OM_1,
-    OM_0,
-    OM,
-    # no S0OM/S1OM because here because using data from S1 to estimate outcome in S0
-    # and in sensitivity analysis will do reverse
-    # and same for IOW and DR
+    all_crude_1,
+    all_crude_0,
+    all_crude,
+    S1_OM_1,
+    S1_OM_0,
+    S1_OM,
     all_OM_1,
     all_OM_0,
     all_OM,
-    IOW1_1,
-    IOW1_0,
-    IOW1,
-    IOW2_1,
-    IOW2_0,
-    IOW2,
+    S1_IOW1_1,
+    S1_IOW1_0,
+    S1_IOW1,
+    S1_IOW2_1,
+    S1_IOW2_0,
+    S1_IOW2,
     all_IOW1_1,
     all_IOW1_0,
     all_IOW1,
     all_IOW2_1,
     all_IOW2_0,
     all_IOW2,
-    DR1_1,
-    DR1_0,
-    DR1,
-    DR2_1,
-    DR2_0,
-    DR2,
-    DR3_1,
-    DR3_0,
-    DR3,
-    DR4_1,
-    DR4_0,
-    DR4,
+    S1_DR1_1,
+    S1_DR1_0,
+    S1_DR1,
+    S1_DR2_1,
+    S1_DR2_0,
+    S1_DR2,
+    S1_DR3_1,
+    S1_DR3_0,
+    S1_DR3,
+    S1_DR4_1,
+    S1_DR4_0,
+    S1_DR4,
     all_DR1_1,
     all_DR1_0,
     all_DR1,
@@ -1198,21 +1282,27 @@ bs <- function(data, indices) {
     all_DR4_1,
     all_DR4_0,
     all_DR4,
-    GEE_crude_1,
-    GEE_crude_0,
-    GEE_crude,
-    S1GEE_crude_1,
-    S1GEE_crude_0,
-    S1GEE_crude,
-    S0GEE_crude_1,
-    S0GEE_crude_0,
-    S0GEE_crude,
-    GEE_IOW1_1,
-    GEE_IOW1_0,
-    GEE_IOW1,
-    GEE_IOW2_1,
-    GEE_IOW2_0,
-    GEE_IOW2,
+    S1_GEE_crude_1,
+    S1_GEE_crude_0,
+    S1_GEE_crude,
+    S0_GEE_crude_1,
+    S0_GEE_crude_0,
+    S0_GEE_crude,
+    all_GEE_crude_1,
+    all_GEE_crude_0,
+    all_GEE_crude,
+    S1_GEE_IOW1_1,
+    S1_GEE_IOW1_0,
+    S1_GEE_IOW1,
+    S1_GEE_IOW2_1,
+    S1_GEE_IOW2_0,
+    S1_GEE_IOW2,
+    S0_GEE_IOW1_1,
+    S0_GEE_IOW1_0,
+    S0_GEE_IOW1,
+    S0_GEE_IOW2_1,
+    S0_GEE_IOW2_0,
+    S0_GEE_IOW2,
     all_GEE_IOW1_1,
     all_GEE_IOW1_0,
     all_GEE_IOW1,
@@ -1255,24 +1345,24 @@ bs <- function(data, indices) {
     S0_sw_1,
     S0_sw_0,
     S0_sw,
-    iosw_1,
-    iosw_0,
-    iosw,
-    siosw_1,
-    siosw_0,
-    siosw,
-    iptw_1,
-    iptw_0,
-    iptw,
-    siptw_1,
-    siptw_0,
-    siptw,
-    w_1,
-    w_0,
-    w,
-    sw_1,
-    sw_0,
-    sw
+    all_iosw_1,
+    all_iosw_0,
+    all_iosw,
+    all_siosw_1,
+    all_siosw_0,
+    all_siosw,
+    all_iptw_1,
+    all_iptw_0,
+    all_iptw,
+    all_siptw_1,
+    all_siptw_0,
+    all_siptw,
+    all_w_1,
+    all_w_0,
+    all_w,
+    all_sw_1,
+    all_sw_0,
+    all_sw
   )
   
   OM_values <<- c(OM_values, OM)
