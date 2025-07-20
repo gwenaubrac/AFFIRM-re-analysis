@@ -129,7 +129,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin, 
       data = S1data_A1,
       family = binomial (link = "logit")
@@ -149,7 +149,7 @@ bs <- function(data, indices) {
           any_preterm +
           any_sga +
           bmi_above_30 +
-          smoking_bin,
+          smoking_bin +
           aspirin,
         data = S1data_A0,
         family = binomial (link = "logit"))
@@ -191,7 +191,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin, 
+        smoking_bin +
         aspirin, 
       data = data_A1,
       family = binomial (link = "logit")
@@ -211,7 +211,7 @@ bs <- function(data, indices) {
           any_preterm +
           any_sga +
           bmi_above_30 +
-          smoking_bin,
+          smoking_bin +
           aspirin,
         data = data_A0,
         family = binomial (link = "logit"))
@@ -248,7 +248,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga + 
         bmi_above_30 +
-        smoking_bin, 
+        smoking_bin + 
         aspirin +
         aspirin * ns(age__years_, df = 2),
       family = binomial(),
@@ -278,7 +278,7 @@ bs <- function(data, indices) {
   
   marg_ps <- predict(marg_s_model, newdata = d, type = "response")
   odds_s <- marg_ps/(1-marg_ps)
-  d[, siosw := fifelse(S == 1, odds_s*iosw, 1)]
+  d[, siosw := fifelse(S == 1, odds_s*iosw, 0)]
   d[, siosw_all := fifelse(S == 1, odds_s*iosw_all, 1)]
   
   
@@ -294,7 +294,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga + 
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = wmulti_d,
       weights = siosw, # use SIOSW rather than IOSW for improved stability
@@ -342,7 +342,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga + 
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = single_d,
       family = binomial(link = "logit")
@@ -385,28 +385,30 @@ bs <- function(data, indices) {
   
   #### f) IOSW-WEIGHTED ATE ####
   
+  # in weighted multi-site patients:
   A <- d$trt
   S <- d$S
   w <- d$w
   sw <- d$sw
+  w_all <- d$w_all
+  sw_all <- d$sw_all
   Y <- d$outcome
   
-  # in weighted multi-site patients:
-  S1_IOW1_1 <- (sum(w)^-1) * sum(A*S*w*Y)
-  S1_IOW1_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+  S1_IOW1_1 <- (sum(A*S*w)^-1) * sum(A*S*w*Y)
+  S1_IOW1_0 <- (sum((1-A)*S*w)^-1) * sum((1-A)*S*w*Y)
   S1_IOW1 <- S1_IOW1_1 - S1_IOW1_0
   
-  S1_IOW2_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
-  S1_IOW2_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
+  S1_IOW2_1 <- (sum(A*S*sw)^-1) * sum(A*S*sw*Y)
+  S1_IOW2_0 <- (sum((1-A)*S*sw)^-1) * sum((1-A)*S*sw*Y)
   S1_IOW2 <- S1_IOW2_1 - S1_IOW2_0
   
   # in all patients:
-  all_IOW1_1 <- (sum(w_all)^-1) * sum(A*w_all*Y)
-  all_IOW1_0 <- (sum(w_all)^-1) * sum((1-A)*w_all*Y)
+  all_IOW1_1 <- (sum(w_all*A)^-1) * sum(A*w_all*Y)
+  all_IOW1_0 <- (sum(w_all*(1-A))^-1) * sum((1-A)*w_all*Y)
   all_IOW1 <- all_IOW1_1 - all_IOW1_0
   
-  all_IOW2_1 <- (sum(sw_all)^-1) * sum(A*sw_all*Y)
-  all_IOW2_0 <- (sum(sw_all)^-1) * sum((1-A)*sw_all*Y)
+  all_IOW2_1 <- (sum(sw_all*A)^-1) * sum(A*sw_all*Y)
+  all_IOW2_0 <- (sum(sw_all*(1-A))^-1) * sum((1-A)*sw_all*Y)
   all_IOW2 <- all_IOW2_1 - all_IOW2_0
   
   
@@ -428,12 +430,12 @@ bs <- function(data, indices) {
     p1 <- d$p1
     p0 <- d$p0
     
-    S1_DR1_1 <- (sum(w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-    S1_DR1_0 <- (sum(w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+    S1_DR1_1 <- (sum(S*A*w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
+    S1_DR1_0 <- (sum(S*(1-A)*w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
     S1_DR1 <- S1_DR1_1 - S1_DR1_0
     
-    S1_DR2_1 <- (sum(sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
-    S1_DR2_0 <- (sum(sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
+    S1_DR2_1 <- (sum(S*A*sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
+    S1_DR2_0 <- (sum(S*(1-A)*sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
     S1_DR2 <- S1_DR2_1 - S1_DR2_0
     
   }
@@ -450,7 +452,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = S1data_A1,
       weights = S1data_A1$w,
@@ -472,7 +474,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = S1data_A0,
       weights = S1data_A0$w,
@@ -493,8 +495,8 @@ bs <- function(data, indices) {
     
   } else {
     
-    p1_w <- predict(DR1mod_w, newdata = S0data, type = "response")
-    p0_w <- predict(DR0mod_w, newdata = S0data, type = "response")
+    p1_w <- predict(DR1mod_w, newdata = S0_data, type = "response")
+    p0_w <- predict(DR0mod_w, newdata = S0_data, type = "response")
     S1_DR3_1 <- mean(p1_w)
     S1_DR3_0 <- mean(p0_w)
     S1_DR3 <- S1_DR3_1 - S1_DR3_0
@@ -510,7 +512,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = S1data_A1,
       weights = S1data_A1$sw,
@@ -533,7 +535,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = S1data_A0,
       weights = S1data_A0$sw,
@@ -553,8 +555,8 @@ bs <- function(data, indices) {
     S1_DR4 <- NA
    
   } else {
-    p1_sw <- predict(DR1mod_sw, newdata = S0data, type = "response")
-    p0_sw <- predict(DR0mod_sw, newdata = S0data, type = "response")
+    p1_sw <- predict(DR1mod_sw, newdata = S0_data, type = "response")
+    p0_sw <- predict(DR0mod_sw, newdata = S0_data, type = "response")
     
     S1_DR4_1 <- mean(p1_sw)
     S1_DR4_0 <- mean(p0_sw)
@@ -576,12 +578,12 @@ bs <- function(data, indices) {
     all_p1 <- d$all_p1
     all_p0 <- d$all_p0
     
-    all_DR1_1 <- (sum(w_all)^-1) * sum(A*w_all*(Y-all_p1) + all_p1)
-    all_DR1_0 <- (sum(w_all)^-1) * sum((1-A)*w_all*(Y-all_p0) + all_p0)
+    all_DR1_1 <- (sum(A*w_all)^-1) * sum(A*w_all*(Y-all_p1) + all_p1)
+    all_DR1_0 <- (sum((1-A)*w_all)^-1) * sum((1-A)*w_all*(Y-all_p0) + all_p0)
     all_DR1 <- all_DR1_1 - all_DR1_0
     
-    all_DR2_1 <- (sum(sw_all)^-1) * sum(A*sw_all*(Y-all_p1) + all_p1)
-    all_DR2_0 <- (sum(sw_all)^-1) * sum((1-A)*sw_all*(Y-all_p0) + all_p0)
+    all_DR2_1 <- (sum(A*sw_all)^-1) * sum(A*sw_all*(Y-all_p1) + all_p1)
+    all_DR2_0 <- (sum((1-A)*sw_all)^-1) * sum((1-A)*sw_all*(Y-all_p0) + all_p0)
     all_DR2 <- all_DR2_1 - all_DR2_0
     
   }
@@ -595,7 +597,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = data_A1,
       weights = data_A1$w_all,
@@ -616,7 +618,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = data_A0,
       weights = data_A0$w_all,
@@ -654,7 +656,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = data_A1,
       weights = data_A1$sw_all,
@@ -677,7 +679,7 @@ bs <- function(data, indices) {
         any_preterm +
         any_sga +
         bmi_above_30 +
-        smoking_bin,
+        smoking_bin +
         aspirin,
       data = data_A0,
       weights = data_A0$sw_all,
@@ -742,17 +744,17 @@ bs <- function(data, indices) {
     
   } else {
     
-    treated <- S1data
+    treated <- S1_data
     treated$trt <- 1
     
-    untreated <- S1data
+    untreated <- S1_data
     untreated$trt <- 0
     
-    treated$pred <- predict(S1gee_crude_model, newdata = S1treated, type = "response")
-    untreated$pred <- predict(S1gee_crude_model, newdata = S1untreated, type = "response")
+    treated$pred <- predict(S1gee_crude_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S1gee_crude_model, newdata = untreated, type = "response")
     
-    S1_GEE_crude_1 <- mean(S1treated$pred)
-    S1_GEE_crude_0 <- mean(S1untreated$pred)
+    S1_GEE_crude_1 <- mean(treated$pred)
+    S1_GEE_crude_0 <- mean(untreated$pred)
     S1_GEE_crude <- S1_GEE_crude_1 - S1_GEE_crude_0
     
     rm(treated, untreated)
@@ -774,6 +776,7 @@ bs <- function(data, indices) {
     failures <<- failures + 1
     return(NULL)
   })
+  
   if (is.null(S0gee_crude_model)) {
     
     S0_GEE_crude_1 <- NA
@@ -814,6 +817,7 @@ bs <- function(data, indices) {
     failures <<- failures + 1
     return(NULL)
   })
+  
   if (is.null(gee_crude_model)) {
     
     all_GEE_crude_1 <- NA
@@ -844,7 +848,7 @@ bs <- function(data, indices) {
   ## unstabilized weighted GEE
   
   # S=1 patients
-  gee_w_model <- tryCatch({
+  S1gee_w_model <- tryCatch({
     glmgee(
       outcome ~ trt,
       data = S1_data,
@@ -860,7 +864,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(gee_w_model)) {
+  if (is.null(S1gee_w_model)) {
     
     S1_GEE_IOW1_1 <- NA
     S1_GEE_IOW1_0 <- NA
@@ -874,8 +878,8 @@ bs <- function(data, indices) {
     untreated <- S1_data
     untreated$trt <- 0
     
-    treated$pred <- predict(gee_w_model, newdata = treated, type = "response")
-    untreated$pred <- predict(gee_w_model, newdata = untreated, type = "response")
+    treated$pred <- predict(S1gee_w_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S1gee_w_model, newdata = untreated, type = "response")
     
     S1_GEE_IOW1_1 <- mean(treated$pred)
     S1_GEE_IOW1_0 <- mean(untreated$pred)
@@ -886,14 +890,14 @@ bs <- function(data, indices) {
     
   
   # S=0 patients
-  gee_w_model <- tryCatch({
+  S0gee_w_model <- tryCatch({
     glmgee(
       outcome ~ trt,
       data = S0_data,
       id = unique_id,
       family = binomial(link = "logit"),
       corstr = "exchangeable",
-      weights = S1_data$w
+      weights = S0_data$w_all # IOSW of 1 for S0 patients
     )
   }, error = function(e) {
     cat("Error with GEE w \n")
@@ -902,7 +906,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(gee_w_model)) {
+  if (is.null(S0gee_w_model)) {
     
     S0_GEE_IOW1_1 <- NA
     S0_GEE_IOW1_0 <- NA
@@ -916,8 +920,8 @@ bs <- function(data, indices) {
     untreated <- S0_data
     untreated$trt <- 0
     
-    treated$pred <- predict(gee_w_model, newdata = treated, type = "response")
-    untreated$pred <- predict(gee_w_model, newdata = untreated, type = "response")
+    treated$pred <- predict(S0gee_w_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S0gee_w_model, newdata = untreated, type = "response")
     
     S0_GEE_IOW1_1 <- mean(treated$pred)
     S0_GEE_IOW1_0 <- mean(untreated$pred)
@@ -971,7 +975,7 @@ bs <- function(data, indices) {
   ## stabilized weighted GEE
   
   # S1 patients
-  gee_sw_model <- tryCatch({
+  S1gee_sw_model <- tryCatch({
     glmgee(
       outcome ~ trt,
       data = S1_data,
@@ -987,7 +991,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(gee_sw_model)) {
+  if (is.null(S1gee_sw_model)) {
     
     S1_GEE_IOW2_1 <- NA
     S1_GEE_IOW2_0 <- NA
@@ -1001,8 +1005,8 @@ bs <- function(data, indices) {
     untreated <- S1_data
     untreated$trt <- 0
     
-    treated$pred <- predict(gee_sw_model, newdata = treated, type = "response")
-    untreated$pred <- predict(gee_sw_model, newdata = untreated, type = "response")
+    treated$pred <- predict(S1gee_sw_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S1gee_sw_model, newdata = untreated, type = "response")
     
     S1_GEE_IOW2_1 <- mean(treated$pred)
     S1_GEE_IOW2_0 <- mean(untreated$pred)
@@ -1012,14 +1016,14 @@ bs <- function(data, indices) {
   }
   
   # S0 patients
-  gee_sw_model <- tryCatch({
+  S0gee_sw_model <- tryCatch({
     glmgee(
       outcome ~ trt,
       data = S0_data,
       id = unique_id,
       family = binomial(link = "logit"),
       corstr = "exchangeable",
-      weights = S0_data$sw
+      weights = S0_data$sw_all # IOSW of 1 for S0 patients
     )
   }, error = function(e) {
     cat("Error with GEE sw \n")
@@ -1028,7 +1032,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(gee_sw_model)) {
+  if (is.null(S0gee_sw_model)) {
     
     S0_GEE_IOW2_1 <- NA
     S0_GEE_IOW2_0 <- NA
@@ -1042,8 +1046,8 @@ bs <- function(data, indices) {
     untreated <- S0_data
     untreated$trt <- 0
     
-    treated$pred <- predict(gee_sw_model, newdata = treated, type = "response")
-    untreated$pred <- predict(gee_sw_model, newdata = untreated, type = "response")
+    treated$pred <- predict(S0gee_sw_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S0gee_sw_model, newdata = untreated, type = "response")
     
     S0_GEE_IOW2_1 <- mean(treated$pred)
     S0_GEE_IOW2_0 <- mean(untreated$pred)
@@ -1100,20 +1104,20 @@ bs <- function(data, indices) {
   
   #### i) ADDITIONAL ANALYSES ####
   
-  ## by subgroups of S=0
+  ## by subgroups of S=1
   
   S1_data <- d %>% 
     filter(S == 1)
   
-  A <- S1data$trt
-  S <- S1data$S
-  Y <- S1data$outcome
-  iosw <- S1data$iosw
-  siosw <- S1data$siosw
-  iptw <- S1data$iptw
-  siptw <- S1data$siptw
-  w <- S1data$w
-  sw <- S1data$sw
+  A <- S1_data$trt
+  S <- S1_data$S
+  Y <- S1_data$outcome
+  iosw <- S1_data$iosw
+  siosw <- S1_data$siosw
+  iptw <- S1_data$iptw
+  siptw <- S1_data$siptw
+  w <- S1_data$w
+  sw <- S1_data$sw
   
   S1_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
   S1_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
@@ -1143,30 +1147,30 @@ bs <- function(data, indices) {
   
   ## by subgroups of S=0
   
-  S0data <- d %>% 
+  S0_data <- d %>% 
     filter(S == 0)
   
-  A <- S0data$trt
-  S <- S0data$S
-  Y <- S0data$outcome
-  iosw <- S0data$iosw
-  siosw <- S0data$siosw
-  iptw <- S0data$iptw
-  siptw <- S0data$siptw
-  w <- S0data$w
-  sw <- S0data$sw
+  A <- S0_data$trt
+  S <- S0_data$S
+  Y <- S0_data$outcome
+  iosw <- S0_data$iosw_all
+  siosw <- S0_data$siosw_all
+  iptw <- S0_data$iptw
+  siptw <- S0_data$siptw
+  w <- S0_data$w_all # IOSW of 1 for S0 patients
+  sw <- S0_data$sw_all # IOSW of 1 for S0 patients
   
   S0_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
   S0_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
-  S0_iosw = S0_iosw_1 - S0_iosw_0
+  S0_iosw <- S0_iosw_1 - S0_iosw_0
   
   S0_siosw_1 <- (sum(siosw*A)^-1) * sum(A*siosw*Y)
   S0_siosw_0 <- (sum(siosw*(1-A))^-1) * sum((1-A)*siosw*Y)
-  S0_siosw = S0_siosw_1 - S0_siosw_0
+  S0_siosw <- S0_siosw_1 - S0_siosw_0
   
   S0_iptw_1 <- (sum(iptw*A)^-1) * sum(A*iptw*Y)
   S0_iptw_0 <- (sum(iptw*(1-A))^-1) * sum((1-A)*iptw*Y)
-  S0_iptw = S0_iptw_1 - S0_iptw_0
+  S0_iptw <- S0_iptw_1 - S0_iptw_0
   
   S0_siptw_1 <- (sum(siptw*A)^-1) * sum(A*siptw*Y)
   S0_siptw_0 <- (sum(siptw*(1-A))^-1) * sum((1-A)*siptw*Y)
@@ -1174,11 +1178,11 @@ bs <- function(data, indices) {
   
   S0_w_1 <- (sum(w*A)^-1) * sum(A*w*Y)
   S0_w_0 <- (sum(w*(1-A))^-1) * sum((1-A)*w*Y)
-  S0_w = S0_w_1 - S0_w_0
+  S0_w <- S0_w_1 - S0_w_0
   
   S0_sw_1 <- (sum(sw*A)^-1) * sum(A*sw*Y)
   S0_sw_0 <- (sum(sw*(1-A))^-1) * sum((1-A)*sw*Y)
-  S0_sw = S0_sw_1 - S0_sw_0
+  S0_sw <- S0_sw_1 - S0_sw_0
   
 
   # whole population
@@ -1186,35 +1190,35 @@ bs <- function(data, indices) {
   A <- d$trt
   S <- d$S
   Y <- d$outcome
-  iosw <- d$iosw
-  siosw <- d$siosw
+  iosw <- d$iosw_all
+  siosw <- d$siosw_all
   iptw <- d$iptw
   siptw <- d$siptw
   w <- d$w_all
   sw <- d$sw_all
   
-  all_iosw_1 <- (sum(iosw)^-1) * sum(A*S*iosw*Y)
-  all_iosw_0 <- (sum(iosw)^-1) * sum((1-A)*S*iosw*Y)
+  all_iosw_1 <- (sum(iosw)^-1) * sum(A*iosw*Y)
+  all_iosw_0 <- (sum(iosw)^-1) * sum((1-A)*iosw*Y)
   all_iosw = all_iosw_1 - all_iosw_0
   
-  all_siosw_1 <- (sum(siosw)^-1) * sum(A*S*siosw*Y)
-  all_siosw_0 <- (sum(siosw)^-1) * sum((1-A)*S*siosw*Y)
+  all_siosw_1 <- (sum(siosw)^-1) * sum(A*siosw*Y)
+  all_siosw_0 <- (sum(siosw)^-1) * sum((1-A)*siosw*Y)
   all_siosw = all_siosw_1 - all_siosw_0
   
-  all_iptw_1 <- (sum(iptw)^-1) * sum(A*S*iptw*Y)
-  all_iptw_0 <- (sum(iptw)^-1) * sum((1-A)*S*iptw*Y)
+  all_iptw_1 <- (sum(iptw)^-1) * sum(A*iptw*Y)
+  all_iptw_0 <- (sum(iptw)^-1) * sum((1-A)*iptw*Y)
   all_iptw = all_iptw_1 - all_iptw_0
   
-  all_siptw_1 <- (sum(siptw)^-1) * sum(A*S*siptw*Y)
-  all_siptw_0 <- (sum(siptw)^-1) * sum((1-A)*S*siptw*Y)
+  all_siptw_1 <- (sum(siptw)^-1) * sum(A*siptw*Y)
+  all_siptw_0 <- (sum(siptw)^-1) * sum((1-A)*siptw*Y)
   all_siptw = all_siptw_1 - all_siptw_0
   
-  all_w_1 <- (sum(w)^-1) * sum(A*S*w*Y)
-  all_w_0 <- (sum(w)^-1) * sum((1-A)*S*w*Y)
+  all_w_1 <- (sum(w)^-1) * sum(A*w*Y)
+  all_w_0 <- (sum(w)^-1) * sum((1-A)*w*Y)
   all_w = all_w_1 - all_w_0
   
-  all_sw_1 <- (sum(sw)^-1) * sum(A*S*sw*Y)
-  all_sw_0 <- (sum(sw)^-1) * sum((1-A)*S*sw*Y)
+  all_sw_1 <- (sum(sw)^-1) * sum(A*sw*Y)
+  all_sw_0 <- (sum(sw)^-1) * sum((1-A)*sw*Y)
   all_sw = all_sw_1 - all_sw_0
   
   
@@ -1365,10 +1369,10 @@ bs <- function(data, indices) {
     all_sw
   )
   
-  OM_values <<- c(OM_values, OM)
-  DR1_values <<- c(DR1_values, DR1)
-  DR2_values <<- c(DR2_values, DR2)
-  GEE_sw_values <<- c(GEE_sw_values, GEE_IOW2)
+  OM_values <<- c(OM_values, S1_OM)
+  DR1_values <<- c(DR1_values, S1_DR1)
+  DR2_values <<- c(DR2_values, S1_DR2)
+  GEE_sw_values <<- c(GEE_sw_values, S1_GEE_IOW2)
   
   bootstrap_samples[[length(OM_values)]] <<- d
   
@@ -1387,14 +1391,16 @@ system.time({
   bs_results_boot <- boot(
     data = data,
     statistic = bs,
-    R = R
-    #parallel = "snow"
+    R = R,
+    parallel = "snow"
   )
 })
 
 saveRDS(bs_results_boot, "bs_results_boot.rds")
+bs_results_boot <- readRDS("bs_results_boot.rds")
 
-# in main sample, oM model not fitted in 35 iterations
+
+# in main sample, oM model not fitted in 38 iterations
 # let us check what the near-0 models lead towards
 # and set "extreme" values for those iterations for the percentile CIs
 # OM: indices 7, 8, 9
@@ -1454,14 +1460,13 @@ p <- ggplot(test_val, aes(x = test_value)) +
   )
 p
 
-ggsave("bootsrapped_OM_dist.png", plot = p, width = 8, height = 6, dpi = 300)
+#ggsave("bootsrapped_OM_dist.png", plot = p, width = 8, height = 6, dpi = 300)
 
 # assign 99 to half and -99 to other
 # to failed iterations (so they are not skipped when building CIs)
 # OM: indices 19, 20, 21
-# DR1 & DR2: indices 37-42 (won't work if OM did not work)
-# DR3 & DR4 (w and sw): 43-48
-# DR all: 49-60
+# DR1-4: indices 37-48 (won't work if OM did not work)
+# 106-111 NAs (S0_iosw_1, S0_iosw_0, S0_iosw, S0_siosw_1, S0_siosw_0, S0_siosw)
 # GEE sw: 73, 74, 75
 
 # note: failures to represent failed MODELS, but can be multiple in same iteration
@@ -1469,7 +1474,7 @@ ggsave("bootsrapped_OM_dist.png", plot = p, width = 8, height = 6, dpi = 300)
 test <- bs_results_boot$t
 test2 <- as.data.frame(test) %>% filter(is.na(V19))
 
-cols_to_replace <- c(19, 20, 21, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 73, 74, 75)
+cols_to_replace <- c(19:21, 37:48)
 test3 <- bs_results_boot$t[, cols_to_replace]
 test4 <- as.data.frame(test) %>%
   filter(if_any(everything(), is.na))
@@ -1492,54 +1497,54 @@ for (col in cols_to_replace) {
 #### 4. GET CONFIDENCE INTERVALS ####
 
 bs_col_names <- c(
-  "all_crude_prior_1",
-  "all_crude_prior_0",
-  "all_crude_prior",
   "S1crude_prior_1",
   "S1crude_prior_0",
   "S1crude_prior",
   "S0crude_prior_1",
   "S0crude_prior_0",
   "S0crude_prior",
+  "all_crude_prior_1",
+  "all_crude_prior_0",
+  "all_crude_prior",
+  "S1crude_1",
+  "S1crude_0",
+  "S1crude",
+  "S0crude_1",
+  "S0crude_0",
+  "S0crude",
   "all_crude_1",
   "all_crude_0",
   "all_crude",
-  "S1_crude_1",
-  "S1_crude_0",
-  "S1_crude",
-  "S0_crude_1",
-  "S0_crude_0",
-  "S0_crude",
-  "OM_1",
-  "OM_0",
-  "OM",
+  "S1_OM_1",
+  "S1_OM_0",
+  "S1_OM",
   "all_OM_1",
   "all_OM_0",
   "all_OM",
-  "IOW1_1",
-  "IOW1_0",
-  "IOW1",
-  "IOW2_1",
-  "IOW2_0",
-  "IOW2",
+  "S1_IOW1_1",
+  "S1_IOW1_0",
+  "S1_IOW1",
+  "S1_IOW2_1",
+  "S1_IOW2_0",
+  "S1_IOW2",
   "all_IOW1_1",
   "all_IOW1_0",
   "all_IOW1",
   "all_IOW2_1",
   "all_IOW2_0",
   "all_IOW2",
-  "DR1_1",
-  "DR1_0",
-  "DR1",
-  "DR2_1",
-  "DR2_0",
-  "DR2",
-  "DR3_1",
-  "DR3_0",
-  "DR3",
-  "DR4_1",
-  "DR4_0",
-  "DR4",
+  "S1_DR1_1",
+  "S1_DR1_0",
+  "S1_DR1",
+  "S1_DR2_1",
+  "S1_DR2_0",
+  "S1_DR2",
+  "S1_DR3_1",
+  "S1_DR3_0",
+  "S1_DR3",
+  "S1_DR4_1",
+  "S1_DR4_0",
+  "S1_DR4",
   "all_DR1_1",
   "all_DR1_0",
   "all_DR1",
@@ -1552,21 +1557,27 @@ bs_col_names <- c(
   "all_DR4_1",
   "all_DR4_0",
   "all_DR4",
-  "GEE_crude_1",
-  "GEE_crude_0",
-  "GEE_crude",
-  "S1GEE_crude_1",
-  "S1GEE_crude_0",
-  "S1GEE_crude",
-  "S0GEE_crude_1",
-  "S0GEE_crude_0",
-  "S0GEE_crude",
-  "GEE_IOW1_1",
-  "GEE_IOW1_0",
-  "GEE_IOW1",
-  "GEE_IOW2_1",
-  "GEE_IOW2_0",
-  "GEE_IOW2",
+  "S1_GEE_crude_1",
+  "S1_GEE_crude_0",
+  "S1_GEE_crude",
+  "S0_GEE_crude_1",
+  "S0_GEE_crude_0",
+  "S0_GEE_crude",
+  "all_GEE_crude_1",
+  "all_GEE_crude_0",
+  "all_GEE_crude",
+  "S1_GEE_IOW1_1",
+  "S1_GEE_IOW1_0",
+  "S1_GEE_IOW1",
+  "S1_GEE_IOW2_1",
+  "S1_GEE_IOW2_0",
+  "S1_GEE_IOW2",
+  "S0_GEE_IOW1_1",
+  "S0_GEE_IOW1_0",
+  "S0_GEE_IOW1",
+  "S0_GEE_IOW2_1",
+  "S0_GEE_IOW2_0",
+  "S0_GEE_IOW2",
   "all_GEE_IOW1_1",
   "all_GEE_IOW1_0",
   "all_GEE_IOW1",
@@ -1609,42 +1620,24 @@ bs_col_names <- c(
   "S0_sw_1",
   "S0_sw_0",
   "S0_sw",
-  "iosw_1",
-  "iosw_0",
-  "iosw",
-  "siosw_1",
-  "siosw_0",
-  "siosw",
-  "iptw_1",
-  "iptw_0",
-  "iptw",
-  "siptw_1",
-  "siptw_0",
-  "siptw",
-  "w_1",
-  "w_0",
-  "w",
-  "sw_1",
-  "sw_0",
-  "sw",
-  "test_iosw_1",
-  "test_iosw_0",
-  "test_iosw",
-  "test_siosw_1",
-  "test_siosw_0",
-  "test_siosw",
-  "test_iptw_1",
-  "test_iptw_0",
-  "test_iptw",
-  "test_siptw_1",
-  "test_siptw_0",
-  "test_siptw",
-  "test_w_1",
-  "test_w_0",
-  "test_w",
-  "test_sw_1",
-  "test_sw_0",
-  "test_sw"
+  "all_iosw_1",
+  "all_iosw_0",
+  "all_iosw",
+  "all_siosw_1",
+  "all_siosw_0",
+  "all_siosw",
+  "all_iptw_1",
+  "all_iptw_0",
+  "all_iptw",
+  "all_siptw_1",
+  "all_siptw_0",
+  "all_siptw",
+  "all_w_1",
+  "all_w_0",
+  "all_w",
+  "all_sw_1",
+  "all_sw_0",
+  "all_sw"
 )
 
 bs_ci_boot <- data.frame(matrix(nrow = 0, ncol = 3))
@@ -1662,6 +1655,7 @@ for (i in 1:length(bs_results_boot$t0)) {
   stat_ci$estimate <- bs_results_boot$t0[i]
   stat_ci$lower_ci <- t(CI[, 4])[[1]]
   stat_ci$upper_ci <- t(CI[, 5])[[1]]
+  
   bs_ci_boot <- rbind(bs_ci_boot, stat_ci)
   
 }
