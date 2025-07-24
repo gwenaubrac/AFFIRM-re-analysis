@@ -16,6 +16,10 @@
 ## Transporting inferences from a randomized trial to a new target population. 
 ## Published online May 1, 2018. doi:10.48550/arXiv.1805.00550
 ##
+## For full code to get estimates in manuscript, please see bootstrap code.
+## This is a more commented version that also includes the data preparation process,
+## but not all of the different estimators.
+##
 ## ---------------------------
 
 #### 1. LOAD PACKAGES ####
@@ -1398,7 +1402,7 @@ round(crude, 5)*100
 
 ## B) OUTCOME MODELING
 
-# model probability of outcome in treated multi-site patients
+# model probability of outcome in treated multi-site patients (S1A1)
 outcome_model <- as.formula(paste("outcome ~", paste(analytic_covs_list, collapse = "+")))
 outcome_model
 S1data_A1 <- subset(analytic_data, S == 1 & trt == 1)
@@ -1407,25 +1411,25 @@ summary(S1data_A1[analytic_covs_list])
 OM1mod <- glm(formula = outcome_model, data = S1data_A1, family = "binomial" (link = "logit"))
 summary(OM1mod)
 
-# predict probability of outcome in whole population based on treated
-p1 <- predict(OM1mod, newdata = analytic_data, type = "response")
-analytic_data$p1 <- p1
+# predict probability of outcome in S0 patients based on outcome model in S1A1
+S0_data <- analytic_data %>% filter(S==0)
+p1 <- predict(OM1mod, newdata = S0_data, type = "response")
+S0_data$p1 <- p1
+analytic_data$p1[S==0] <- p1
 
-# model probability of outcome in untreated multi-site patients
+# model probability of outcome in untreated multi-site patients (S1A0)
 S1data_A0 <- subset(analytic_data, S == 1 & trt == 0)
 summary(S1data_A0[analytic_covs_list])
 
 OM0mod <- glm(formula = outcome_model, data = S1data_A0, family = "binomial" (link = "logit"))
 
-# predict probability of outcome in whole population based on untreated
-p0 <- predict(OM0mod, newdata = analytic_data, type = "response")
-analytic_data$p0 <- p0
+# predict probability of outcome in whole population based on outcome model in S1A0
+p0 <- predict(OM0mod, newdata = S0_data, type = "response")
+analytic_data$p0[S==0] <- p0
 
-
-S0sub <- subset(analytic_data, S == 0)
-OM_1 <- mean(S0sub$p1)
-OM_0 <- mean(S0sub$p0)
-OM <- mean(S0sub$p1) - mean(S0sub$p0)
+OM_1 <- mean(S0_data$p1)
+OM_0 <- mean(S0_data$p0)
+OM <- mean(S0_data$p1) - mean(S0_data$p0)
 OM
 
 round(OM_1, 4)*100
@@ -1464,14 +1468,40 @@ round(IOW2, 4)*100
 
 
 ## D) DOUBLY ROBUST ESTIMATOR
+A <- analytic_data$trt
+S <- analytic_data$S
+w <- analytic_data$w
+w_all <- analytic_data$w_all # S0 patients have IOSW of 1 and their respective IPTW weight
+sw_all <- analytic_data$sw_all
+sw <- analytic_data$sw # stabilized weights
+Y <- analytic_data$outcome
 
-# DR unstabilized
+# model probability of outcome in treated multi-site patients (S1A1)
+outcome_model <- as.formula(paste("outcome ~", paste(analytic_covs_list, collapse = "+")))
+S1data_A1 <- subset(analytic_data, S == 1 & trt == 1)
+OM1mod <- glm(formula = outcome_model, data = S1data_A1, family = "binomial" (link = "logit"))
+p1 <- predict(OM1mod, newdata = analytic_data, type = "response")
+analytic_data$p1 <- p1
+
+S1data_A0 <- subset(analytic_data, S == 1 & trt == 0)
+OM0mod <- glm(formula = outcome_model, data = S1data_A0, family = "binomial" (link = "logit"))
+p0 <- predict(OM0mod, newdata = analytic_data, type = "response")
+analytic_data$p0 <- p0
+
 p1 <- analytic_data$p1
 p0 <- analytic_data$p0
 
-# unstabilized weights
-DR1_1 <- (sum(S*A*w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-DR1_0 <- (sum(S*(1-A)*w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+# using unstabilized weights
+# DR1_1 <- (sum(S*A*w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
+# DR1_0 <- (sum(S*(1-A)*w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+
+numerator_A1 <- sum(S*A*w_all*Y) - sum(S*A*w_all*p1) + sum((1-S)*A*w_all)
+denominator_A1 <- sum(S*A*w_all)
+DR1_1 <- numerator_A1/denominator_A1
+
+numerator_A0 <- sum(S*(1-A)*w_all*Y) - sum(S*(1-A)*w_all*p1) + sum((1-S)*A*w_all)
+denominator_A0 <- sum(S*(1-A)*w_all)
+DR1_0 <- numerator_A0/denominator_A0
 
 DR1 <- DR1_1 - DR1_0
 DR1
@@ -1481,8 +1511,13 @@ round(DR1_0, 4)*100
 round(DR1, 4)*100
 
 # stabilized weights
-DR2_1 <- (sum(S*A*sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
-DR2_0 <- (sum(S*(1-A)*sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
+numerator_sA1 <- sum(S*A*sw_all*Y) - sum(S*A*sw_all*p1) + sum((1-S)*A*sw_all)
+denominator_sA1 <- sum(S*A*sw_all)
+DR2_1 <- numerator_sA1/denominator_sA1
+
+numerator_sA0 <- sum(S*(1-A)*sw_all*Y) - sum(S*(1-A)*sw_all*p1) + sum((1-S)*A*sw_all)
+denominator_sA0 <- sum(S*(1-A)*sw_all)
+DR2_0 <- numerator_A0/denominator_sA0
 
 DR2 <- DR2_1 - DR2_0
 DR2
@@ -1531,7 +1566,36 @@ round(DR4, 4)*100
 
 ## A) CRUDE GEE
 
-# crude from whole population
+# crude from whole population before restrictions
+
+gee_crude_prior_model <- glmgee(
+  outcome ~ trt,
+  id = unique_id, 
+  data = data,
+  family = binomial("logit"),
+  corstr = "exchangeable" # can try independence, exchangeable, unstructured
+)
+
+treated <- data
+treated$trt <- 1
+
+untreated <- data
+untreated$trt <- 0
+
+treated$pred <- predict(gee_crude_prior_model, newdata = treated, type = "response")
+untreated$pred <- predict(gee_crude_prior_model, newdata = untreated, type = "response")
+
+GEE_crude_prior_1 <- mean(treated$pred)
+GEE_crude_prior_0 <- mean(untreated$pred)
+
+GEE_crude_prior <- GEE_crude_prior_1 - GEE_crude_prior_0
+GEE_crude_prior
+round(GEE_crude_prior_1, 4)*100
+round(GEE_crude_prior_0, 4)*100
+round(GEE_crude_prior, 4)*100
+rm(treated, untreated)
+
+# crude from whole population after restrictions
 
 # GEE coefficients have same interpretation as in logistic model
 # i.e., odds ratio

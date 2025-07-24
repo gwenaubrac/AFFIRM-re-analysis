@@ -73,7 +73,7 @@ bs <- function(data, indices) {
   all_crude_prior_0 <- sum(d$outcome[d$trt == 0])/sum(d$trt == 0)
   all_crude_prior <- all_crude_prior_1 - all_crude_prior_0
   
-  # S==1 patients:
+  # S == 1 patients:
   S1crude_prior_1 <- sum(d$outcome[d$trt == 1 & d$S == 1])/sum(d$trt == 1 & d$S == 1)
   S1crude_prior_0 <- sum(d$outcome[d$trt == 0 & d$S == 1])/sum(d$trt == 0 & d$S == 1)
   S1crude_prior <- S1crude_prior_1 - S1crude_prior_0
@@ -82,6 +82,135 @@ bs <- function(data, indices) {
   S0crude_prior_1 <- sum(d$outcome[d$trt == 1 & d$S == 0])/sum(d$trt == 1 & d$S == 0)
   S0crude_prior_0 <- sum(d$outcome[d$trt == 0 & d$S == 0])/sum(d$trt == 0 & d$S == 0)
   S0crude_prior <- S0crude_prior_1 - S0crude_prior_0
+  
+  # crude GEE in all patients:
+  S1_data <- d %>% 
+    filter(S == 1)
+  
+  S0_data <- d %>% 
+    filter(S == 0)
+  
+  gee_crude_prior_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      id = unique_id,
+      data = d,
+      family = binomial("logit"),
+      corstr = "exchangeable"
+    )
+  }, error = function(e) {
+    cat("Error with GEE crude prior \n")
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    failures <<- failures + 1
+    return(NULL)
+  })
+  
+  if (is.null(gee_crude_model_prior)) {
+    
+    all_GEE_crude_prior_1 <- NA
+    all_GEE_crude_prior_0 <- NA
+    all_GEE_crude_prior <- NA
+    
+  } else {
+    
+    treated <- d
+    treated$trt <- 1
+    
+    untreated <- d
+    untreated$trt <- 0
+    
+    treated$pred <- predict(gee_crude_prior_model, newdata = treated, type = "response")
+    untreated$pred <- predict(gee_crude_prior_model, newdata = untreated, type = "response")
+    
+    all_GEE_crude_prior_1 <- mean(treated$pred)
+    all_GEE_crude_prior_0 <- mean(untreated$pred)
+    all_GEE_crude_prior <- all_GEE_crude_prior_1 - all_GEE_crude_prior_0
+    
+    rm(treated, untreated)
+    
+  }
+  
+  # crude GEE in S == 1:
+  S1gee_crude_prior_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      id = unique_id,
+      data = S1_data,
+      family = binomial("logit"),
+      corstr = "exchangeable"
+    )
+  }, error = function(e) {
+    cat("Error with S1 GEE crude prior \n")
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    failures <<- failures + 1
+    return(NULL)
+  })
+  
+  if (is.null(S1gee_crude_prior_model)) {
+    
+    S1_GEE_crude_prior_1 <- NA
+    S1_GEE_crude_prior_0 <- NA
+    S1_GEE_crude_prior <- NA
+    
+  } else {
+    
+    treated <- S1_data
+    treated$trt <- 1
+    
+    untreated <- S1_data
+    untreated$trt <- 0
+    
+    treated$pred <- predict(S1gee_crude_prior_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S1gee_crude_prior_model, newdata = untreated, type = "response")
+    
+    S1_GEE_crude_prior_1 <- mean(treated$pred)
+    S1_GEE_crude_prior_0 <- mean(untreated$pred)
+    S1_GEE_crude_prior <- S1_GEE_crude_prior_1 - S1_GEE_crude_prior_0
+    
+    rm(treated, untreated)
+    
+  }
+  
+  # crude GEE in S == 0:
+  S0gee_crude_prior_model <- tryCatch({
+    glmgee(
+      outcome ~ trt,
+      id = unique_id,
+      data = S0_data,
+      family = binomial("logit"),
+      corstr = "exchangeable"
+    )
+  }, error = function(e) {
+    cat("Error with S0 GEE crude prior \n")
+    saveRDS(d, file = "bad_bootstrap_sample.rds")
+    failures <<- failures + 1
+    return(NULL)
+  })
+  
+  if (is.null(S0gee_crude_prior_model)) {
+    
+    S0_GEE_crude_prior_1 <- NA
+    S0_GEE_crude_prior_0 <- NA
+    S0_GEE_crude_prior <- NA
+    
+  } else {
+    
+    treated <- S0_data
+    treated$trt <- 1
+    
+    untreated <- S0_data
+    untreated$trt <- 0
+    
+    treated$pred <- predict(S0gee_crude_prior_model, newdata = treated, type = "response")
+    untreated$pred <- predict(S0gee_crude_prior_model, newdata = untreated, type = "response")
+    
+    S0_GEE_crude_prior_1 <- mean(treated$pred)
+    S0_GEE_crude_prior_0 <- mean(untreated$pred)
+    S0_GEE_crude_prior <- S0_GEE_crude_prior_1 - S0_GEE_crude_prior_0
+    
+    rm(treated, untreated)
+    
+  }
   
   #### b) CRUDE ATE AFTER APPLY RESTRICTIONS ####
   
@@ -121,7 +250,7 @@ bs <- function(data, indices) {
   S1data_A1 <- subset(d, S == 1 & trt == 1)
   S1data_A0 <- subset(d, S == 1 & trt == 0)
   
-  OM1mod <- tryCatch({
+  S1_OM1mod <- tryCatch({
     glm(
       outcome ~
         age__years_ +
@@ -135,13 +264,13 @@ bs <- function(data, indices) {
       family = binomial (link = "logit")
     )
   }, error = function(e) {
-    cat("Error with OM1mod \n")
+    cat("Error with S1 OM1mod \n")
     failures <<- failures + 1
     saveRDS(d, file = "bad_bootstrap_sample.rds")
     return(NULL)
   })
 
-  OM0mod <- tryCatch({
+  S1_OM0mod <- tryCatch({
     glm(formula =       
           outcome ~
           age__years_ +
@@ -154,36 +283,39 @@ bs <- function(data, indices) {
         data = S1data_A0,
         family = binomial (link = "logit"))
   }, error = function(e) {
-    cat("Error with OM0mod \n")
+    cat("Error with S1 OM0mod \n")
     failures <<- failures + 1
     saveRDS(d, file = "bad_bootstrap_sample.rds")
     return(NULL)
   })
   
-  if (is.null(OM1mod) | is.null(OM0mod)) {
+  if (is.null(S1_OM1mod) | is.null(S1_OM0mod)) {
     
+    # called "S1_OM" but really is ATE in S0 based on models fitted in S1
     S1_OM_1 <- NA
     S1_OM_0 <- NA
     S1_OM <- NA
     
   } else {
     
-    d$p1 <- predict(OM1mod, newdata = d, type = "response")
-    d$p0 <- predict(OM0mod, newdata = d, type = "response")
     S0_data <- subset(d, S == 0)
-    S1_OM_1 <- mean(S0_data$p1)
-    S1_OM_0 <- mean(S0_data$p0)
-    S1_OM <- mean(S0_data$p1) - mean(S0_data$p0)  
+    S0_data$S1p1 <- predict(S1_OM1mod, newdata = S0_data, type = "response")
+    S0_data$S1p0 <- predict(S1_OM0mod, newdata = S0_data, type = "response")
+    S1_OM_1 <- mean(S0_data$S1p1)
+    S1_OM_0 <- mean(S0_data$S1p0)
+    S1_OM <- S1_OM_1 - S1_OM_0  
+    
+    d$S1p1[S==0] <- S0_data$S1p1
+    d$S1p0[S==0] <- S0_data$S1p0
     
     }
   
+  # use info from S==0 to estimate outcome in S==0
+  # alternatively can just use S0 outcomes directly
+  S0data_A1 <- subset(d, S == 0 & trt == 1)
+  S0data_A0 <- subset(d, S == 0 & trt == 0)
   
-  # in all patients
-  # (use data from all patients to estimate outcome)
-  data_A1 <- d %>% filter(trt == 1)
-  data_A0 <- d %>% filter(trt == 0)
-  
-  all_OM1mod <- tryCatch({
+  S0_OM1mod <- tryCatch({
     glm(
       outcome ~
         age__years_ +
@@ -193,17 +325,17 @@ bs <- function(data, indices) {
         bmi_above_30 +
         smoking_bin +
         aspirin, 
-      data = data_A1,
+      data = S0data_A1,
       family = binomial (link = "logit")
     )
   }, error = function(e) {
-    cat("Error with all OM1mod \n")
+    cat("Error with S0 OM1mod \n")
     failures <<- failures + 1
     saveRDS(d, file = "bad_bootstrap_sample.rds")
     return(NULL)
   })
   
-  all_OM0mod <- tryCatch({
+  S0_OM0mod <- tryCatch({
     glm(formula =       
           outcome ~
           age__years_ +
@@ -213,30 +345,44 @@ bs <- function(data, indices) {
           bmi_above_30 +
           smoking_bin +
           aspirin,
-        data = data_A0,
+        data = S0data_A0,
         family = binomial (link = "logit"))
   }, error = function(e) {
-    cat("Error with all OM0mod \n")
+    cat("Error with S0 OM0mod \n")
     failures <<- failures + 1
     saveRDS(d, file = "bad_bootstrap_sample.rds")
     return(NULL)
   })
   
-  if (is.null(all_OM1mod) | is.null(all_OM0mod)) {
+  if (is.null(OM1mod) | is.null(OM0mod)) {
     
-    all_OM_1 <- NA
-    all_OM_0 <- NA
-    all_OM <- NA
+    S0_OM_1 <- NA
+    S0_OM_0 <- NA
+    S0_OM <- NA
     
   } else {
     
-    d$all_p1 <- predict(all_OM1mod, newdata = d, type = "response")
-    d$all_p0 <- predict(all_OM0mod, newdata = d, type = "response")
-    all_OM_1 <- mean(d$all_p1)
-    all_OM_0 <- mean(d$all_p0)
-    all_OM <- mean(d$all_p1) - mean(d$all_p0)  
+    S0_data$S0p1 <- predict(S0_OM1mod, newdata = S0_data, type = "response")
+    S0_data$S0p0 <- predict(S0_OM0mod, newdata = S0_data, type = "response")
+    
+    S0_OM_1 <- mean(S0_data$S0p1)
+    S0_OM_0 <- mean(S0_data$S0p0)
+    S0_OM <- S0_OM_1 - S0_OM_0  
+    
+    d$S0p1[S==1] <- S1_data$S0p1
+    d$S0p0[S==1] <- S1_data$S0p0
+    
+    # if were to use S0 outcomes directly:
+    # S0_OM_1 <- mean(S0_data$Y[trt==1])
+    # S0_OM_0 <- mean(S0_data$Y[trt==0])
+    # S0_OM <- S0_OM_1 - S0_OM_0 
     
   }
+  
+  # combining both predicted outcome in S0 using S1 and S0 data:
+  all_OM_1 <- mean(d$S1p1[S==0]) + mean(d$S0p1[S==0])
+  all_OM_0 <- mean(d$S1p0[S==0]) + mean(d$S0p0[S==0])
+  all_OM <- all_OM_1 - all_OM_0
   
   ####  d) ESTIMATE IOSW WEIGHTS ####
   
@@ -427,15 +573,28 @@ bs <- function(data, indices) {
     
   } else {
     
-    p1 <- d$p1
-    p0 <- d$p0
+    # predicted outcome in S0 using S1 data
+    p1 <- d$S1p1
+    p0 <- d$S1p0
     
-    S1_DR1_1 <- (sum(S*A*w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
-    S1_DR1_0 <- (sum(S*(1-A)*w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
+    denominator_S1A1 <- sum(S*A*w)
+    numerator_S1A1 <- sum(S*A*w*(Y-p1))
+    S1_DR1_1 <- numerator_S1A1/denominator_S1A1
+    
+    denominator_S1A0 <- sum(S*(1-A)*w)
+    numerator_S1A0 <- sum(S*(1-A)*w*(Y-p1))
+    S1_DR1_0 <- numerator_S1A0 - denominator_S1A0
+    
     S1_DR1 <- S1_DR1_1 - S1_DR1_0
     
-    S1_DR2_1 <- (sum(S*A*sw)^-1) * sum(S*A*sw*(Y-p1) + (1-S) * p1)
-    S1_DR2_0 <- (sum(S*(1-A)*sw)^-1) * sum(S*(1-A)*sw*(Y-p0) + (1-S) * p0)
+    denominator_sS1A1 <- sum(S*A*sw)
+    numerator_sS1A1 <- sum(S*A*sw*(Y-p1))
+    S1_DR2_1 <- numerator_sS1A1/denominator_sS1A1
+    
+    denominator_sS1A0 <- sum(S*(1-A)*sw)
+    numerator_sS1A0 <- sum(S*(1-A)*sw*(Y-p1))
+    S1_DR2_0 <- numerator_sS1A0 - denominator_sS1A0
+    
     S1_DR2 <- S1_DR2_1 - S1_DR2_0
     
   }
@@ -575,15 +734,27 @@ bs <- function(data, indices) {
     
   } else {
     
-    all_p1 <- d$all_p1
-    all_p0 <- d$all_p0
+    S1p1 <- d$S1p1
+    S1p1 <- d$S1p1
     
-    all_DR1_1 <- (sum(A*w_all)^-1) * sum(A*w_all*(Y-all_p1) + all_p1)
-    all_DR1_0 <- (sum((1-A)*w_all)^-1) * sum((1-A)*w_all*(Y-all_p0) + all_p0)
+    denominator_A1 <- sum(A*w_all)
+    numerator_A1 <- sum(S*A*w_all*(Y-S1p1)) + sum((1-S)*A*w_all)
+    all_DR1_1 <- numerator_A1 - denominator_A1
+    
+    denominator_A0 <- sum((1-A)*w_all)
+    numerator_A0 <- sum(S*(1-A)*w_all*(Y-p0)) + sum((1-S)*(1-A)*w_all)
+    all_DR1_0 <- numerator_A0 - denominator_A0
+    
     all_DR1 <- all_DR1_1 - all_DR1_0
     
-    all_DR2_1 <- (sum(A*sw_all)^-1) * sum(A*sw_all*(Y-all_p1) + all_p1)
-    all_DR2_0 <- (sum((1-A)*sw_all)^-1) * sum((1-A)*sw_all*(Y-all_p0) + all_p0)
+    denominator_sA1 <- sum(A*sw_all)
+    numerator_sA1 <- sum(S*A*sw_all*(Y-p1)) + sum((1-S)*A*sw_all)
+    all_DR2_1 <- numerator_A1 - denominator_A1
+    
+    denominator_sA0 <- sum((1-A)*sw_all)
+    numerator_sA0 <- sum(S*(1-A)*sw_all*(Y-p0)) + sum((1-S)*(1-A)*sw_all)
+    all_DR2_0 <- numerator_sA0 - denominator_sA0
+    
     all_DR2 <- all_DR2_1 - all_DR2_0
     
   }
@@ -1244,9 +1415,21 @@ bs <- function(data, indices) {
     all_crude_1,
     all_crude_0,
     all_crude,
+    S1_GEE_crude_prior_1,
+    S1_GEE_crude_prior_0,
+    S1_GEE_crude_prior,
+    S0_GEE_crude_prior_1,
+    S0_GEE_crude_prior_0,
+    S0_GEE_crude_prior,
+    all_GEE_crude_prior_1,
+    all_GEE_crude_prior_0,
+    all_GEE_crude_prior,
     S1_OM_1,
     S1_OM_0,
     S1_OM,
+    S0_OM_1,
+    S0_OM_0,
+    S0_OM,
     all_OM_1,
     all_OM_0,
     all_OM,
@@ -1515,6 +1698,15 @@ bs_col_names <- c(
   "all_crude_1",
   "all_crude_0",
   "all_crude",
+  "S1_GEE_crude_prior_1",
+  "S1_GEE_crude_prior_0",
+  "S1_GEE_crude_prior",
+  "S0_GEE_crude_prior_1",
+  "S0_GEE_crude_prior_0",
+  "S0_GEE_crude_prior",
+  "all_GEE_crude_prior_1",
+  "all_GEE_crude_prior_0",
+  "all_GEE_crude_prior",
   "S1_OM_1",
   "S1_OM_0",
   "S1_OM",
