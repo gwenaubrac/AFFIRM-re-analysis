@@ -55,7 +55,7 @@ failures <<- 0
 bootstrap_samples <<- list()
 OM_values <<- numeric() 
 DR1_values <<- numeric() 
-DR2_values <<- numeric() 
+# DR2_values <<- numeric() 
 GEE_sw_values <<- numeric()
 
 #### 3. BOOSTRAP FUNCTION ####
@@ -84,16 +84,10 @@ bs <- function(data, indices) {
   S0crude_prior <- S0crude_prior_1 - S0crude_prior_0
   
   # crude GEE in all patients:
-  S1_data <- d %>% 
-    filter(S == 1)
-  
-  S0_data <- d %>% 
-    filter(S == 0)
-  
   gee_crude_prior_model <- tryCatch({
     glmgee(
       outcome ~ trt,
-      id = unique_id,
+      id = unique_id, # id for sites
       data = d,
       family = binomial("logit"),
       corstr = "exchangeable"
@@ -105,7 +99,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(gee_crude_model_prior)) {
+  if (is.null(gee_crude_prior_model)) {
     
     all_GEE_crude_prior_1 <- NA
     all_GEE_crude_prior_0 <- NA
@@ -131,6 +125,8 @@ bs <- function(data, indices) {
   }
   
   # crude GEE in S == 1:
+  S1_data <- d %>% filter(S == 1)
+  
   S1gee_crude_prior_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -172,6 +168,8 @@ bs <- function(data, indices) {
   }
   
   # crude GEE in S == 0:
+  S0_data <- d %>% filter(S == 0)
+  
   S0gee_crude_prior_model <- tryCatch({
     glmgee(
       outcome ~ trt,
@@ -298,15 +296,14 @@ bs <- function(data, indices) {
     
   } else {
     
+    d$S1p1 <- predict(S1_OM1mod, newdata = d, type = "response")
+    d$S1p0 <- predict(S1_OM0mod, newdata = d, type = "response")
+    
     S0_data <- subset(d, S == 0)
-    S0_data$S1p1 <- predict(S1_OM1mod, newdata = S0_data, type = "response")
-    S0_data$S1p0 <- predict(S1_OM0mod, newdata = S0_data, type = "response")
+    
     S1_OM_1 <- mean(S0_data$S1p1)
     S1_OM_0 <- mean(S0_data$S1p0)
     S1_OM <- S1_OM_1 - S1_OM_0  
-    
-    d$S1p1[S==0] <- S0_data$S1p1
-    d$S1p0[S==0] <- S0_data$S1p0
     
     }
   
@@ -354,7 +351,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
-  if (is.null(OM1mod) | is.null(OM0mod)) {
+  if (is.null(S0_OM1mod) | is.null(S0_OM0mod)) {
     
     S0_OM_1 <- NA
     S0_OM_0 <- NA
@@ -362,15 +359,14 @@ bs <- function(data, indices) {
     
   } else {
     
-    S0_data$S0p1 <- predict(S0_OM1mod, newdata = S0_data, type = "response")
-    S0_data$S0p0 <- predict(S0_OM0mod, newdata = S0_data, type = "response")
+    d$S0p1 <- predict(S0_OM1mod, newdata = d, type = "response")
+    d$S0p0 <- predict(S0_OM0mod, newdata = d, type = "response")
+    
+    S0_data <- d %>% subset(S == 0)
     
     S0_OM_1 <- mean(S0_data$S0p1)
     S0_OM_0 <- mean(S0_data$S0p0)
     S0_OM <- S0_OM_1 - S0_OM_0  
-    
-    d$S0p1[S==1] <- S1_data$S0p1
-    d$S0p0[S==1] <- S1_data$S0p0
     
     # if were to use S0 outcomes directly:
     # S0_OM_1 <- mean(S0_data$Y[trt==1])
@@ -380,8 +376,8 @@ bs <- function(data, indices) {
   }
   
   # combining both predicted outcome in S0 using S1 and S0 data:
-  all_OM_1 <- mean(d$S1p1[S==0]) + mean(d$S0p1[S==0])
-  all_OM_0 <- mean(d$S1p0[S==0]) + mean(d$S0p0[S==0])
+  all_OM_1 <- (mean(S0_data$S1p1) + mean(S0_data$S0p1))/2
+  all_OM_0 <- (mean(S0_data$S1p0) + mean(S0_data$S0p0))/2
   all_OM <- all_OM_1 - all_OM_0
   
   ####  d) ESTIMATE IOSW WEIGHTS ####
@@ -411,8 +407,8 @@ bs <- function(data, indices) {
   
 
   d$ps <- predict(w_reg, newdata = d, type = "response")
-  d[, iosw := fifelse(S == 1, (1 - ps) / ps, 0)] # only S1 patients get a weight
-  d[, iosw_all := fifelse(S == 1, (1 - ps) / ps, 1)] # all patients get a weight (w=1 for S0)
+  d[, iosw := fifelse(S == 1, (1 - ps) / ps, 0)] # iosw: only S1 patients get a weight
+  d[, iosw_all := fifelse(S == 1, (1 - ps) / ps, 1)] # iosw_all: all patients get a weight (w=1 for S0)
   
   marg_s_model <- tryCatch({
     glm(S ~ 1, family = binomial(), data = d)
@@ -422,6 +418,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
+  # multiply by marginal odds of selection to get "stabilized" iosw
   marg_ps <- predict(marg_s_model, newdata = d, type = "response")
   odds_s <- marg_ps/(1-marg_ps)
   d[, siosw := fifelse(S == 1, odds_s*iosw, 0)]
@@ -429,6 +426,8 @@ bs <- function(data, indices) {
   
   
   #### e) ESTIMATE IPTW ####
+  # we will fist estimate iptw in S==1 patients
+  # then in S==0 patients, separately
 
   wmulti_d <- d %>% filter(S == 1)
   
@@ -455,7 +454,7 @@ bs <- function(data, indices) {
   
   if (is.null(trt_model)) return(NA)
   
-  wmulti_d$pa <- predict(trt_model, type = "response")
+  wmulti_d$pa <- predict(trt_model, type = "response") # probability of trt
   wmulti_d[, iptw := fifelse(trt == 1, 1/pa, 1/(1-pa))]
   
   marg_trt_model <- tryCatch({
@@ -466,6 +465,7 @@ bs <- function(data, indices) {
     return(NULL)
   })
   
+  # multiply by marg probability of trt to stabilize iptw
   wmulti_d$marg_pa <- predict(marg_trt_model, type = "response")
   wmulti_d[, siptw := fifelse(trt == 1, iptw * marg_pa, iptw * (1-marg_pa))]
 
@@ -520,6 +520,7 @@ bs <- function(data, indices) {
     siptw = single_d$siptw
   )]
   
+  # compute final combined weights
   d[, `:=`(
     w = iosw * iptw,
     sw = siosw * siptw,
@@ -540,21 +541,21 @@ bs <- function(data, indices) {
   sw_all <- d$sw_all
   Y <- d$outcome
   
-  S1_IOW1_1 <- (sum(A*S*w)^-1) * sum(A*S*w*Y)
-  S1_IOW1_0 <- (sum((1-A)*S*w)^-1) * sum((1-A)*S*w*Y)
+  S1_IOW1_1 <- sum(A*S*w*Y) / sum(A*S*w)
+  S1_IOW1_0 <- sum((1-A)*S*w*Y) / sum((1-A)*S*w)
   S1_IOW1 <- S1_IOW1_1 - S1_IOW1_0
   
-  S1_IOW2_1 <- (sum(A*S*sw)^-1) * sum(A*S*sw*Y)
-  S1_IOW2_0 <- (sum((1-A)*S*sw)^-1) * sum((1-A)*S*sw*Y)
+  S1_IOW2_1 <- sum(A*S*sw*Y) / sum(A*S*sw)
+  S1_IOW2_0 <- sum((1-A)*S*sw*Y) / sum((1-A)*S*sw)
   S1_IOW2 <- S1_IOW2_1 - S1_IOW2_0
   
   # in all patients:
-  all_IOW1_1 <- (sum(w_all*A)^-1) * sum(A*w_all*Y)
-  all_IOW1_0 <- (sum(w_all*(1-A))^-1) * sum((1-A)*w_all*Y)
+  all_IOW1_1 <- sum(A*w_all*Y) / sum(A*w_all)
+  all_IOW1_0 <- sum((1-A)*w_all*Y) / sum((1-A)*w_all)
   all_IOW1 <- all_IOW1_1 - all_IOW1_0
   
-  all_IOW2_1 <- (sum(sw_all*A)^-1) * sum(A*sw_all*Y)
-  all_IOW2_0 <- (sum(sw_all*(1-A))^-1) * sum((1-A)*sw_all*Y)
+  all_IOW2_1 <- sum(A*sw_all*Y) / sum(A*sw_all)
+  all_IOW2_0 <- sum((1-A)*sw_all*Y) / sum((1-A)*sw_all)
   all_IOW2 <- all_IOW2_1 - all_IOW2_0
   
   
@@ -562,40 +563,47 @@ bs <- function(data, indices) {
   #### g) DOUBLY ROBUST ESTIMATOR ####
   
   # in weighted S==1 patients
-  if (is.null(OM0mod) | is.null(OM1mod)) {
+  A <- d$trt
+  S <- d$S
+  w <- d$siptw * d$iosw # use stabilized IPTW and unstabilized IOSW
+  w_all <- d$siptw* d$iosw_all
+  # sw_all <- d$sw_all
+  Y <- d$outcome
+  
+  if (is.null(S0_OM0mod) | is.null(S0_OM1mod)) {
     
     S1_DR1_1 <- NA
     S1_DR1_0 <- NA
     S1_DR1 <- NA
-    S1_DR2_1 <- NA
-    S1_DR2_0 <- NA
-    S1_DR2 <- NA
+    # S1_DR2_1 <- NA
+    # S1_DR2_0 <- NA
+    # S1_DR2 <- NA
     
   } else {
     
-    # predicted outcome in S0 using S1 data
+    # predicted outcome using S1 data
     p1 <- d$S1p1
     p0 <- d$S1p0
     
-    denominator_S1A1 <- sum(S*A*w)
-    numerator_S1A1 <- sum(S*A*w*(Y-p1))
+    numerator_S1A1 <- sum(S*A*w*(Y-p1)) + sum((1-S)*p1)
+    denominator_S1A1 <- sum(1-S)
     S1_DR1_1 <- numerator_S1A1/denominator_S1A1
     
-    denominator_S1A0 <- sum(S*(1-A)*w)
-    numerator_S1A0 <- sum(S*(1-A)*w*(Y-p1))
-    S1_DR1_0 <- numerator_S1A0 - denominator_S1A0
+    numerator_S1A0 <- sum(S*(1-A)*w*(Y-p0)) + sum((1-S)*p0)
+    denominator_S1A0 <- sum(1-S)
+    S1_DR1_0 <- numerator_S1A0/denominator_S1A0
     
     S1_DR1 <- S1_DR1_1 - S1_DR1_0
     
-    denominator_sS1A1 <- sum(S*A*sw)
-    numerator_sS1A1 <- sum(S*A*sw*(Y-p1))
-    S1_DR2_1 <- numerator_sS1A1/denominator_sS1A1
-    
-    denominator_sS1A0 <- sum(S*(1-A)*sw)
-    numerator_sS1A0 <- sum(S*(1-A)*sw*(Y-p1))
-    S1_DR2_0 <- numerator_sS1A0 - denominator_sS1A0
-    
-    S1_DR2 <- S1_DR2_1 - S1_DR2_0
+    # numerator_sS1A1 <- sum(S*A*sw*(Y-p1)) + sum((1-S)*p1) # stabilized weights
+    # denominator_sS1A1 <- sum(1-S)
+    # S1_DR2_1 <- numerator_sS1A1/denominator_sS1A1
+    # 
+    # numerator_sS1A0 <- sum(S*(1-A)*sw*(Y-p0)) + sum((1-S)*p0)
+    # denominator_sS1A0 <- sum(1-S)
+    # S1_DR2_0 <- numerator_sS1A0/denominator_sS1A0
+    # 
+    # S1_DR2 <- S1_DR2_1 - S1_DR2_0
     
   }
   
@@ -723,41 +731,44 @@ bs <- function(data, indices) {
   }
   
   # in all patients
-  if (is.null(all_OM0mod) | is.null(all_OM1mod)) {
+  if (is.null(S0_OM0mod) | is.null(S0_OM1mod)) {
     
     all_DR1_1 <- NA
     all_DR1_0 <- NA
     all_DR1 <- NA
-    all_DR2_1 <- NA
-    all_DR2_0 <- NA
-    all_DR2 <- NA
+    # all_DR2_1 <- NA
+    # all_DR2_0 <- NA
+    # all_DR2 <- NA
     
   } else {
     
-    S1p1 <- d$S1p1
-    S1p1 <- d$S1p1
+    p1 <- d$S1p1
+    p0 <- d$S1p0
     
-    denominator_A1 <- sum(A*w_all)
-    numerator_A1 <- sum(S*A*w_all*(Y-S1p1)) + sum((1-S)*A*w_all)
-    all_DR1_1 <- numerator_A1 - denominator_A1
+    numerator_A1 <- sum(S*A*w*(Y-p1)) + sum((1-S)*p1) + sum((1-S)*A*Y)
+    denominator_A1 <- sum(1-S) + sum((1-S)*A)
+    all_DR1_1 <- numerator_A1/denominator_A1
     
-    denominator_A0 <- sum((1-A)*w_all)
-    numerator_A0 <- sum(S*(1-A)*w_all*(Y-p0)) + sum((1-S)*(1-A)*w_all)
-    all_DR1_0 <- numerator_A0 - denominator_A0
+    numerator_A0 <- sum(S*(1-A)*w*(Y-p0)) + sum((1-S)*p0) + sum((1-S)*(1-A)*Y)
+    denominator_A0 <- sum(1-S) + sum((1-S)*(1-A))
+    all_DR1_0 <- numerator_A0/denominator_A0
     
     all_DR1 <- all_DR1_1 - all_DR1_0
     
-    denominator_sA1 <- sum(A*sw_all)
-    numerator_sA1 <- sum(S*A*sw_all*(Y-p1)) + sum((1-S)*A*sw_all)
-    all_DR2_1 <- numerator_A1 - denominator_A1
-    
-    denominator_sA0 <- sum((1-A)*sw_all)
-    numerator_sA0 <- sum(S*(1-A)*sw_all*(Y-p0)) + sum((1-S)*(1-A)*sw_all)
-    all_DR2_0 <- numerator_sA0 - denominator_sA0
-    
-    all_DR2 <- all_DR2_1 - all_DR2_0
+    # numerator_sA1 <- sum(S*A*sw_all*(Y-p1)) + sum((1-S)*p1) + sum((1-S)*A*Y)
+    # denominator_sA1 <- sum(1-S) + sum((1-S)*A)
+    # all_DR2_1 <- numerator_sA1/denominator_sA1
+    # 
+    # numerator_sA0 <- sum(S*(1-A)*sw_all*(Y-p0)) + sum((1-S)*p0) + sum((1-S)*(1-A)*Y)
+    # denominator_sA0 <- sum(1-S) + sum((1-S)*(1-A))
+    # all_DR2_0 <- numerator_sA0/denominator_sA0
+    # 
+    # all_DR2 <- all_DR2_1 - all_DR2_0
     
   }
+  
+  data_A1 <- d %>% filter(trt == 1)
+  data_A0 <- d %>% filter(trt == 0)
   
   all_DR1mod_w <- tryCatch({
     glm(
@@ -1237,7 +1248,7 @@ bs <- function(data, indices) {
       id = unique_id,
       family = binomial(link = "logit"),
       corstr = "exchangeable",
-      weights = d$all_sw
+      weights = d$sw_all
     )
   }, error = function(e) {
     cat("Error with all GEE sw \n")
@@ -1290,28 +1301,28 @@ bs <- function(data, indices) {
   w <- S1_data$w
   sw <- S1_data$sw
   
-  S1_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
-  S1_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
+  S1_iosw_1 <- sum(A*iosw*Y) / sum(A*iosw)
+  S1_iosw_0 <- sum((1-A)*iosw*Y) /  sum((1-A)*iosw)
   S1_iosw = S1_iosw_1 - S1_iosw_0
   
-  S1_siosw_1 <- (sum(siosw*A)^-1) * sum(A*siosw*Y)
-  S1_siosw_0 <- (sum(siosw*(1-A))^-1) * sum((1-A)*siosw*Y)
+  S1_siosw_1 <- sum(A*siosw*Y) / sum(A*siosw)
+  S1_siosw_0 <- sum((1-A)*siosw*Y) /  sum((1-A)*siosw)
   S1_siosw = S1_siosw_1 - S1_siosw_0
   
-  S1_iptw_1 <- (sum(iptw*A)^-1) * sum(A*iptw*Y)
-  S1_iptw_0 <- (sum(iptw*(1-A))^-1) * sum((1-A)*iptw*Y)
+  S1_iptw_1 <- sum(A*iptw*Y) / sum(A*iptw)
+  S1_iptw_0 <- sum((1-A)*iptw*Y) / sum((1-A)*iptw)
   S1_iptw = S1_iptw_1 - S1_iptw_0
   
-  S1_siptw_1 <- (sum(siptw*A)^-1) * sum(A*siptw*Y)
-  S1_siptw_0 <- (sum(siptw*(1-A))^-1) * sum((1-A)*siptw*Y)
+  S1_siptw_1 <- sum(A*siptw*Y) / sum(A*siptw)
+  S1_siptw_0 <- sum((1-A)*siptw*Y) / sum((1-A)*siptw)
   S1_siptw = S1_siptw_1 - S1_siptw_0
   
-  S1_w_1 <- (sum(w*A)^-1) * sum(A*w*Y)
-  S1_w_0 <- (sum(w*(1-A))^-1) * sum((1-A)*w*Y)
+  S1_w_1 <- sum(A*w*Y) / sum(A*w)
+  S1_w_0 <- sum((1-A)*w*Y) / sum((1-A)*w)
   S1_w = S1_w_1 - S1_w_0
   
-  S1_sw_1 <- (sum(sw*A)^-1) * sum(A*sw*Y)
-  S1_sw_0 <- (sum(sw*(1-A))^-1) * sum((1-A)*sw*Y)
+  S1_sw_1 <- sum(A*sw*Y) / sum(A*sw) 
+  S1_sw_0 <- sum((1-A)*sw*Y) / sum((1-A)*sw)
   S1_sw = S1_sw_1 - S1_sw_0
   
   
@@ -1331,28 +1342,28 @@ bs <- function(data, indices) {
   w <- S0_data$w_all # IOSW of 1 for S0 patients
   sw <- S0_data$sw_all # IOSW of 1 for S0 patients
   
-  S0_iosw_1 <- (sum(iosw*A)^-1) * sum(A*iosw*Y)
-  S0_iosw_0 <- (sum(iosw*(1-A))^-1) * sum((1-A)*iosw*Y)
+  S0_iosw_1 <- sum(A*iosw*Y) / sum(A*iosw)
+  S0_iosw_0 <- sum((1-A)*iosw*Y) / sum((1-A)*iosw)
   S0_iosw <- S0_iosw_1 - S0_iosw_0
   
-  S0_siosw_1 <- (sum(siosw*A)^-1) * sum(A*siosw*Y)
-  S0_siosw_0 <- (sum(siosw*(1-A))^-1) * sum((1-A)*siosw*Y)
+  S0_siosw_1 <- sum(A*siosw*Y) / sum(A*siosw)
+  S0_siosw_0 <- sum((1-A)*siosw*Y) / sum((1-A)*siosw)
   S0_siosw <- S0_siosw_1 - S0_siosw_0
   
-  S0_iptw_1 <- (sum(iptw*A)^-1) * sum(A*iptw*Y)
-  S0_iptw_0 <- (sum(iptw*(1-A))^-1) * sum((1-A)*iptw*Y)
+  S0_iptw_1 <- sum(A*iptw*Y) / sum(A*iptw)
+  S0_iptw_0 <- sum((1-A)*iptw*Y) / sum((1-A)*iptw)
   S0_iptw <- S0_iptw_1 - S0_iptw_0
   
-  S0_siptw_1 <- (sum(siptw*A)^-1) * sum(A*siptw*Y)
-  S0_siptw_0 <- (sum(siptw*(1-A))^-1) * sum((1-A)*siptw*Y)
+  S0_siptw_1 <- sum(A*siptw*Y) / sum(A*siptw)
+  S0_siptw_0 <- sum((1-A)*siptw*Y) / sum((1-A)*siptw)
   S0_siptw = S0_siptw_1 - S0_siptw_0
   
-  S0_w_1 <- (sum(w*A)^-1) * sum(A*w*Y)
-  S0_w_0 <- (sum(w*(1-A))^-1) * sum((1-A)*w*Y)
+  S0_w_1 <- sum(A*w*Y) / sum(A*w)
+  S0_w_0 <- sum((1-A)*w*Y) / sum((1-A)*w)
   S0_w <- S0_w_1 - S0_w_0
   
-  S0_sw_1 <- (sum(sw*A)^-1) * sum(A*sw*Y)
-  S0_sw_0 <- (sum(sw*(1-A))^-1) * sum((1-A)*sw*Y)
+  S0_sw_1 <- sum(A*sw*Y) / sum(A*sw)
+  S0_sw_0 <- sum((1-A)*sw*Y) / sum((1-A)*sw)
   S0_sw <- S0_sw_1 - S0_sw_0
   
 
@@ -1368,28 +1379,28 @@ bs <- function(data, indices) {
   w <- d$w_all
   sw <- d$sw_all
   
-  all_iosw_1 <- (sum(iosw)^-1) * sum(A*iosw*Y)
-  all_iosw_0 <- (sum(iosw)^-1) * sum((1-A)*iosw*Y)
+  all_iosw_1 <- sum(A*iosw*Y) / sum(A*iosw)
+  all_iosw_0 <- sum((1-A)*iosw*Y) / sum((1-A)*iosw)
   all_iosw = all_iosw_1 - all_iosw_0
   
-  all_siosw_1 <- (sum(siosw)^-1) * sum(A*siosw*Y)
-  all_siosw_0 <- (sum(siosw)^-1) * sum((1-A)*siosw*Y)
+  all_siosw_1 <- sum(A*siosw*Y) / sum(A*siosw)
+  all_siosw_0 <- sum((1-A)*siosw*Y) / sum((1-A)*siosw)
   all_siosw = all_siosw_1 - all_siosw_0
   
-  all_iptw_1 <- (sum(iptw)^-1) * sum(A*iptw*Y)
-  all_iptw_0 <- (sum(iptw)^-1) * sum((1-A)*iptw*Y)
+  all_iptw_1 <- sum(A*iptw*Y) / sum(A*iptw)
+  all_iptw_0 <- sum((1-A)*iptw*Y) /  sum((1-A)*iptw)
   all_iptw = all_iptw_1 - all_iptw_0
   
-  all_siptw_1 <- (sum(siptw)^-1) * sum(A*siptw*Y)
-  all_siptw_0 <- (sum(siptw)^-1) * sum((1-A)*siptw*Y)
+  all_siptw_1 <- sum(A*siptw*Y) / sum(A*siptw)
+  all_siptw_0 <- sum((1-A)*siptw*Y) / sum((1-A)*siptw)
   all_siptw = all_siptw_1 - all_siptw_0
   
-  all_w_1 <- (sum(w)^-1) * sum(A*w*Y)
-  all_w_0 <- (sum(w)^-1) * sum((1-A)*w*Y)
+  all_w_1 <- sum(A*w*Y) / sum(A*w)
+  all_w_0 <- sum((1-A)*w*Y) / sum((1-A)*w)
   all_w = all_w_1 - all_w_0
   
-  all_sw_1 <- (sum(sw)^-1) * sum(A*sw*Y)
-  all_sw_0 <- (sum(sw)^-1) * sum((1-A)*sw*Y)
+  all_sw_1 <- sum(A*sw*Y) / sum(A*sw)
+  all_sw_0 <- sum((1-A)*sw*Y) / sum((1-A)*sw)
   all_sw = all_sw_1 - all_sw_0
   
   
@@ -1448,9 +1459,9 @@ bs <- function(data, indices) {
     S1_DR1_1,
     S1_DR1_0,
     S1_DR1,
-    S1_DR2_1,
-    S1_DR2_0,
-    S1_DR2,
+    # S1_DR2_1,
+    # S1_DR2_0,
+    # S1_DR2,
     S1_DR3_1,
     S1_DR3_0,
     S1_DR3,
@@ -1460,9 +1471,9 @@ bs <- function(data, indices) {
     all_DR1_1,
     all_DR1_0,
     all_DR1,
-    all_DR2_1,
-    all_DR2_0,
-    all_DR2,
+    # all_DR2_1,
+    # all_DR2_0,
+    # all_DR2,
     all_DR3_1,
     all_DR3_0,
     all_DR3,
@@ -1554,7 +1565,7 @@ bs <- function(data, indices) {
   
   OM_values <<- c(OM_values, S1_OM)
   DR1_values <<- c(DR1_values, S1_DR1)
-  DR2_values <<- c(DR2_values, S1_DR2)
+  #DR2_values <<- c(DR2_values, S1_DR2)
   GEE_sw_values <<- c(GEE_sw_values, S1_GEE_IOW2)
   
   bootstrap_samples[[length(OM_values)]] <<- d
@@ -1710,6 +1721,9 @@ bs_col_names <- c(
   "S1_OM_1",
   "S1_OM_0",
   "S1_OM",
+  "S0_OM_1",
+  "S0_OM_0",
+  "S0_OM",
   "all_OM_1",
   "all_OM_0",
   "all_OM",
@@ -1728,9 +1742,9 @@ bs_col_names <- c(
   "S1_DR1_1",
   "S1_DR1_0",
   "S1_DR1",
-  "S1_DR2_1",
-  "S1_DR2_0",
-  "S1_DR2",
+  # "S1_DR2_1",
+  # "S1_DR2_0",
+  # "S1_DR2",
   "S1_DR3_1",
   "S1_DR3_0",
   "S1_DR3",
@@ -1740,9 +1754,9 @@ bs_col_names <- c(
   "all_DR1_1",
   "all_DR1_0",
   "all_DR1",
-  "all_DR2_1",
-  "all_DR2_0",
-  "all_DR2",
+  # "all_DR2_1",
+  # "all_DR2_0",
+  # "all_DR2",
   "all_DR3_1",
   "all_DR3_0",
   "all_DR3",
@@ -1859,6 +1873,8 @@ bs_ci_boot %<>%
 
 bs_ci_boot %<>%
   mutate(across(where(is.numeric), ~ .x*100))
+
+bs_ci_boot$var_name <- bs_col_names
 
 write.table (bs_ci_boot , "bs_ci.csv", col.names = T, row.names=F, append= F, sep=',')
 

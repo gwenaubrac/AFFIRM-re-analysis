@@ -45,7 +45,7 @@ library(glmtoolbox)
 # no_aspirin
 # restrict_GA_10w
 
-setwd("Z:/RPLATT/GWEN-OHRI/restrict_GA_10w")
+setwd("Z:/RPLATT/GWEN-OHRI/main_results")
 data <- read.csv("../AFFIRM_GWEN.csv")
 
 data %<>%
@@ -770,7 +770,7 @@ to_exclude <- analytic_data %>%
     gravida_cat != 2 |
     live_births_cat != 1 |
     any_vte == 1 |
-    GA_at_start_cat == "10 to <16 weeks" |
+    #GA_at_start_cat == "10 to <16 weeks" |
     GA_at_start_cat == "16 to <20 weeks" |
     GA_at_start_cat == ">=20 weeks"
   )
@@ -1472,8 +1472,8 @@ A <- analytic_data$trt
 S <- analytic_data$S
 w <- analytic_data$w
 w_all <- analytic_data$w_all # S0 patients have IOSW of 1 and their respective IPTW weight
-sw_all <- analytic_data$sw_all
 sw <- analytic_data$sw # stabilized weights
+sw_all <- analytic_data$sw_all
 Y <- analytic_data$outcome
 
 # model probability of outcome in treated multi-site patients (S1A1)
@@ -1495,11 +1495,11 @@ p0 <- analytic_data$p0
 # DR1_1 <- (sum(S*A*w)^-1) * sum(S*A*w*(Y-p1) + (1-S) * p1)
 # DR1_0 <- (sum(S*(1-A)*w)^-1) * sum(S*(1-A)*w*(Y-p0) + (1-S) * p0)
 
-numerator_A1 <- sum(S*A*w_all*Y) - sum(S*A*w_all*p1) + sum((1-S)*A*w_all)
+numerator_A1 <- sum(S*A*w_all*Y) - sum(S*A*w_all*p1) + sum((1-S)*A*w_all*Y)
 denominator_A1 <- sum(S*A*w_all)
 DR1_1 <- numerator_A1/denominator_A1
 
-numerator_A0 <- sum(S*(1-A)*w_all*Y) - sum(S*(1-A)*w_all*p1) + sum((1-S)*A*w_all)
+numerator_A0 <- sum(S*(1-A)*w_all*Y) - sum(S*(1-A)*w_all*p0) + sum((1-S)*A*w_all*Y)
 denominator_A0 <- sum(S*(1-A)*w_all)
 DR1_0 <- numerator_A0/denominator_A0
 
@@ -1511,11 +1511,11 @@ round(DR1_0, 4)*100
 round(DR1, 4)*100
 
 # stabilized weights
-numerator_sA1 <- sum(S*A*sw_all*Y) - sum(S*A*sw_all*p1) + sum((1-S)*A*sw_all)
+numerator_sA1 <- sum(S*A*sw_all*Y) - sum(S*A*sw_all*p1) + sum((1-S)*A*sw_all*Y)
 denominator_sA1 <- sum(S*A*sw_all)
 DR2_1 <- numerator_sA1/denominator_sA1
 
-numerator_sA0 <- sum(S*(1-A)*sw_all*Y) - sum(S*(1-A)*sw_all*p1) + sum((1-S)*A*sw_all)
+numerator_sA0 <- sum(S*(1-A)*sw_all*Y) - sum(S*(1-A)*sw_all*p0) + sum((1-S)*A*sw_all*Y)
 denominator_sA0 <- sum(S*(1-A)*sw_all)
 DR2_0 <- numerator_A0/denominator_sA0
 
